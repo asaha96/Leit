@@ -1,73 +1,145 @@
-# Welcome to your Lovable project
+# Leit - AI-Enhanced Flashcard Platform
 
-## Project info
+A modular, AI-enhanced flashcard platform with spaced repetition, smart answer evaluation, and Canvas LTI 1.3 integration capabilities.
 
-**URL**: https://lovable.dev/projects/a04a36b4-3fd5-45e6-a2e6-b64442701968
+## Features
 
-## How can I edit this code?
+- **Interactive Flashcard Sessions**: Type-to-answer with smart evaluation
+- **Spaced Repetition**: FSRS-inspired scheduling (Again/Hard/Good/Easy)
+- **Database Persistence**: Supabase-backed session logging and progress tracking
+- **CSV Import**: Quick deck creation from CSV files
+- **Modular Architecture**: Clean separation for future Canvas LTI 1.3 integration
+- **Progress Tracking**: Real-time session statistics and accuracy tracking
 
-There are several ways of editing your application.
+## Tech Stack
 
-**Use Lovable**
+- **Frontend**: React + TypeScript + Vite
+- **Database**: Supabase (Lovable Cloud)
+- **UI**: Tailwind CSS + shadcn/ui components
+- **Architecture**: Modular services for database, LTI, and session management
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/a04a36b4-3fd5-45e6-a2e6-b64442701968) and start prompting.
+## Development Setup
 
-Changes made via Lovable will be committed automatically to this repo.
+1. **Clone and Install**:
+   ```bash
+   git clone <repo-url>
+   cd leit
+   npm install
+   ```
 
-**Use your preferred IDE**
+2. **Environment Configuration**:
+   - Copy `.env.example` to `.env`
+   - Lovable Cloud automatically configures Supabase variables
+   - Canvas LTI variables are placeholders for future implementation
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+3. **Database Setup**:
+   - Database schema is automatically created via Supabase migration
+   - Includes tables: `decks`, `cards`, `users`, `sessions`, `session_events`
+   - Demo data is seeded automatically
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+4. **Run Development Server**:
+   ```bash
+   npm run dev
+   ```
 
-Follow these steps:
+## Project Structure
 
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```
+src/
+├── components/          # React UI components
+├── services/           # Business logic services
+│   ├── database.ts     # Supabase database operations
+│   ├── deckImporter.ts # CSV and CrowdAnki import
+│   ├── sessionManager.ts # Session state management
+│   └── lti/           # Canvas LTI 1.3 integration (stubs)
+│       ├── launch.ts   # OIDC launch handling
+│       ├── deeplink.ts # Content item creation
+│       └── ags.ts      # Assignment and Grade Services
+├── types/             # TypeScript type definitions
+├── utils/             # Utility functions
+└── pages/             # Route components
 ```
 
-**Edit a file directly in GitHub**
+## Usage
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+### Quick Start
+1. Open the application
+2. Click "Quick Demo" to create a sample deck
+3. Start studying with interactive flashcards
+4. Use keyboard shortcuts: Enter (reveal), 1-4 (quality rating)
 
-**Use GitHub Codespaces**
+### CSV Import
+1. Click "Import CSV" on the deck picker
+2. Select a CSV file with columns: `front,back,hint,answers,tags`
+3. Multiple answers separated by `|`
+4. Tags separated by commas
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+### Example CSV Format
+```csv
+front,back,hint,answers,tags
+What is the capital of France?,Paris,Starts with P,Paris|Paris France,geography europe
+What is 2 + 2?,4,Basic arithmetic,4|four,math basic
+```
 
-## What technologies are used for this project?
+## API Integration
 
-This project is built with:
+### Session Flow
+1. **Start Session**: `SessionManager.startSession(deckId)`
+2. **Record Answers**: `SessionManager.recordAnswer(cardId, response, quality, expectedAnswers)`
+3. **Finish Session**: `SessionManager.finishSession()`
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Database Operations
+- **Decks**: `DatabaseService.getDecks()`, `DatabaseService.createDeck()`
+- **Cards**: `DatabaseService.getCardsByDeck()`, `DatabaseService.createCards()`
+- **Sessions**: Session and event logging with automatic timestamps
 
-## How can I deploy this project?
+## Canvas LTI 1.3 Integration (Future)
 
-Simply open [Lovable](https://lovable.dev/projects/a04a36b4-3fd5-45e6-a2e6-b64442701968) and click on Share -> Publish.
+The platform is architected for Canvas LTI 1.3 integration:
 
-## Can I connect a custom domain to my Lovable project?
+- **Launch**: OIDC authentication and context extraction
+- **Deep Linking**: Content item creation for Canvas modules
+- **AGS**: Grade passback for assessment scores
+- **Configuration**: Environment variables for Canvas API endpoints
 
-Yes, you can!
+Canvas API integration uses the `CANVAS_API` secret (configured via Lovable Cloud).
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+## Environment Variables
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+```bash
+# Application
+PORT=3000
+NODE_ENV=development
+
+# Supabase (auto-configured by Lovable Cloud)
+VITE_SUPABASE_URL=<auto>
+VITE_SUPABASE_PUBLISHABLE_KEY=<auto>
+VITE_SUPABASE_PROJECT_ID=<auto>
+
+# Canvas LTI 1.3 (for future implementation)
+CANVAS_BASE_URL=<canvas-instance>
+CANVAS_CLIENT_ID=<lti-client-id>
+CANVAS_DEPLOYMENT_ID=<deployment-id>
+CANVAS_AUTH_URL=<oidc-auth-endpoint>
+CANVAS_TOKEN_URL=<token-endpoint>
+CANVAS_JWKS_URL=<jwks-endpoint>
+```
+
+## Deployment
+
+The application deploys automatically via Lovable Cloud with:
+- Supabase database and RLS policies
+- Environment variable management
+- Automatic SSL and domain management
+
+## Contributing
+
+1. Follow the modular architecture
+2. Add TypeScript types for all interfaces
+3. Use semantic tokens from the design system
+4. Test CSV import/export functionality
+5. Maintain Canvas LTI compatibility in service layer
+
+## License
+
+MIT License - see LICENSE file for details.
