@@ -9,12 +9,20 @@ const buttonVariants = cva(
   {
     variants: {
       variant: {
-        default: "bg-primary text-primary-foreground hover:bg-primary/90",
-        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
-        outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
-        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80",
-        ghost: "hover:bg-accent hover:text-accent-foreground",
+        default: "bg-primary text-primary-foreground hover:bg-primary/90 shadow-card transition-smooth",
+        destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-card transition-smooth",
+        outline: "border border-input bg-background hover:bg-accent hover:text-accent-foreground shadow-card transition-smooth",
+        secondary: "bg-secondary text-secondary-foreground hover:bg-secondary/80 shadow-card transition-smooth",
+        ghost: "hover:bg-accent hover:text-accent-foreground transition-smooth",
         link: "text-primary underline-offset-4 hover:underline",
+        // Quality rating buttons
+        again: "bg-destructive text-destructive-foreground hover:bg-destructive/90 shadow-card transition-bounce border-2 border-destructive/20",
+        hard: "bg-warning text-warning-foreground hover:bg-warning/90 shadow-card transition-bounce border-2 border-warning/20",
+        good: "bg-success text-success-foreground hover:bg-success/90 shadow-card transition-bounce border-2 border-success/20",
+        easy: "bg-gradient-primary text-primary-foreground hover:opacity-90 shadow-glow transition-bounce border-2 border-primary/20",
+        // Special variants
+        card: "bg-gradient-card text-card-foreground hover:shadow-glow transition-smooth border border-border",
+        reveal: "bg-gradient-primary text-primary-foreground hover:shadow-glow transition-smooth font-semibold",
       },
       size: {
         default: "h-10 px-4 py-2",
