@@ -1,4 +1,9 @@
 import { useState, useEffect } from 'react';
+import { useAuth } from '@/hooks/useAuth';
+import { AuthPage } from '@/pages/Auth';
+import { Dashboard } from '@/pages/Dashboard';
+import { Practice } from '@/pages/Practice';
+import { Navigation } from '@/components/Navigation';
 import { DatabaseService } from '@/services/database';
 import { SessionManager } from '@/services/sessionManager';
 import { DeckPicker } from '@/components/DeckPicker';
@@ -9,12 +14,28 @@ import type { Card as FlashCard } from '@/types/flashcard';
 import type { SessionStats } from '@/types/flashcard';
 
 const Index = () => {
+  const { user, loading } = useAuth();
+  const [activeTab, setActiveTab] = useState('study');
   const [currentView, setCurrentView] = useState<'picker' | 'session' | 'complete'>('picker');
   const [currentDeckId, setCurrentDeckId] = useState<string | null>(null);
   const [currentCards, setCurrentCards] = useState<FlashCard[]>([]);
   const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
   const [sessionManager] = useState(() => new SessionManager());
   const { toast } = useToast();
+
+  // Show loading screen
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-lg">Loading...</div>
+      </div>
+    );
+  }
+
+  // Show auth page if not logged in
+  if (!user) {
+    return <AuthPage />;
+  }
 
   useEffect(() => {
     sessionManager.initialize();
@@ -99,26 +120,44 @@ const Index = () => {
     setSessionStats(null);
   };
 
+  const renderActiveTab = () => {
+    switch (activeTab) {
+      case 'study':
+        return (
+          <div className="min-h-screen bg-gradient-subtle">
+            {currentView === 'picker' && (
+              <DeckPicker onDeckSelected={handleDeckSelected} />
+            )}
+            
+            {currentView === 'session' && (
+              <FlashcardSession 
+                cards={currentCards}
+                onSessionComplete={handleSessionComplete}
+              />
+            )}
+            
+            {currentView === 'complete' && sessionStats && (
+              <SessionComplete 
+                stats={sessionStats}
+                onRestart={handleRestartSession}
+                onFinish={handleFinishSession}
+              />
+            )}
+          </div>
+        );
+      case 'dashboard':
+        return <Dashboard />;
+      case 'practice':
+        return <Practice />;
+      default:
+        return null;
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-gradient-subtle">
-      {currentView === 'picker' && (
-        <DeckPicker onDeckSelected={handleDeckSelected} />
-      )}
-      
-      {currentView === 'session' && (
-        <FlashcardSession 
-          cards={currentCards}
-          onSessionComplete={handleSessionComplete}
-        />
-      )}
-      
-      {currentView === 'complete' && sessionStats && (
-        <SessionComplete 
-          stats={sessionStats}
-          onRestart={handleRestartSession}
-          onFinish={handleFinishSession}
-        />
-      )}
+    <div className="min-h-screen">
+      <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
+      {renderActiveTab()}
     </div>
   );
 };

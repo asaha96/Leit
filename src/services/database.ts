@@ -4,10 +4,14 @@ import type { Deck, Card, User, Session, SessionEvent } from '@/types/database';
 export class DatabaseService {
   // Users
   static async getCurrentUser(): Promise<User | null> {
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    if (!user) return null;
+
     const { data, error } = await supabase
       .from('users')
       .select('*')
-      .eq('external_sub', 'local-demo-user')
+      .eq('auth_id', user.id)
       .single();
     
     if (error) {

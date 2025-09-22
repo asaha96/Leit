@@ -92,6 +92,7 @@ export type Database = {
         Row: {
           ai_score: number | null
           card_id: string | null
+          correct: boolean | null
           created_at: string | null
           id: string
           next_due: string | null
@@ -102,6 +103,7 @@ export type Database = {
         Insert: {
           ai_score?: number | null
           card_id?: string | null
+          correct?: boolean | null
           created_at?: string | null
           id?: string
           next_due?: string | null
@@ -112,6 +114,7 @@ export type Database = {
         Update: {
           ai_score?: number | null
           card_id?: string | null
+          correct?: boolean | null
           created_at?: string | null
           id?: string
           next_due?: string | null
@@ -141,6 +144,7 @@ export type Database = {
           deck_id: string | null
           finished_at: string | null
           id: string
+          mode: string | null
           score: number | null
           started_at: string | null
           user_id: string | null
@@ -149,6 +153,7 @@ export type Database = {
           deck_id?: string | null
           finished_at?: string | null
           id?: string
+          mode?: string | null
           score?: number | null
           started_at?: string | null
           user_id?: string | null
@@ -157,6 +162,7 @@ export type Database = {
           deck_id?: string | null
           finished_at?: string | null
           id?: string
+          mode?: string | null
           score?: number | null
           started_at?: string | null
           user_id?: string | null
@@ -180,6 +186,7 @@ export type Database = {
       }
       users: {
         Row: {
+          auth_id: string | null
           created_at: string | null
           display_name: string | null
           external_sub: string | null
@@ -187,6 +194,7 @@ export type Database = {
           updated_at: string | null
         }
         Insert: {
+          auth_id?: string | null
           created_at?: string | null
           display_name?: string | null
           external_sub?: string | null
@@ -194,6 +202,7 @@ export type Database = {
           updated_at?: string | null
         }
         Update: {
+          auth_id?: string | null
           created_at?: string | null
           display_name?: string | null
           external_sub?: string | null
