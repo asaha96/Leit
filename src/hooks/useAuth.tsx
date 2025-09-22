@@ -62,14 +62,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   useEffect(() => {
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+      (event, session) => {
         setSession(session);
         setUser(session?.user ?? null);
         
+        // Defer database calls to prevent deadlocks
         if (session?.user) {
-          // Fetch database user profile
-          const dbUserData = await fetchDbUser(session.user);
-          setDbUser(dbUserData);
+          setTimeout(() => {
+            fetchDbUser(session.user).then(setDbUser);
+          }, 0);
         } else {
           setDbUser(null);
         }
@@ -79,13 +80,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     );
 
     // Get initial session
-    supabase.auth.getSession().then(async ({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       
       if (session?.user) {
-        const dbUserData = await fetchDbUser(session.user);
-        setDbUser(dbUserData);
+        setTimeout(() => {
+          fetchDbUser(session.user).then(setDbUser);
+        }, 0);
+      } else {
+        setDbUser(null);
       }
       
       setLoading(false);
