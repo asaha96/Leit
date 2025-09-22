@@ -23,11 +23,6 @@ const Index = () => {
   const [sessionManager] = useState(() => new SessionManager());
   const { toast } = useToast();
 
-  // All hooks must be called before any early returns
-  useEffect(() => {
-    sessionManager.initialize();
-  }, [sessionManager]);
-
   // Show loading screen
   if (loading) {
     return (
@@ -41,6 +36,10 @@ const Index = () => {
   if (!user) {
     return <AuthPage />;
   }
+
+  useEffect(() => {
+    sessionManager.initialize();
+  }, [sessionManager]);
 
   const handleDeckSelected = async (deckId: string) => {
     setCurrentDeckId(deckId);
