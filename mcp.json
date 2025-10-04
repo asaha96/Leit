@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "canvas": {
+      "command": "node",
+      "args": ["mcp-servers/canvas/index.js"],
+      "env": {
+        "CANVAS_API_KEY": "2096~Br9WNkRtwBCLWJfvXWWwZzkQUmwfHANCfkXw4eyhAMWQL7EXe4mw9JVN3V2Tz8xK"
+      }
+    }
+  }
+}
+

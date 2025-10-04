@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
-import { Calendar, TrendingUp, Target, Clock } from 'lucide-react';
+import { Calendar, TrendingUp, Target, Clock, BookOpen, CheckCircle2, AlertCircle } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
+import { canvasService, type CanvasData, type CanvasAssignment } from '@/services/canvasService';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface DashboardMetrics {
   masteryPct: number;
@@ -34,10 +37,21 @@ export const Dashboard = () => {
   const [scoreData, setScoreData] = useState<ScoreData[]>([]);
   const [weakCards, setWeakCards] = useState<WeakCard[]>([]);
   const [loading, setLoading] = useState(true);
+  
+  // Canvas integration state
+  const [canvasData, setCanvasData] = useState<CanvasData | null>(null);
+  const [canvasLoading, setCanvasLoading] = useState(false);
+  const [canvasConfigured, setCanvasConfigured] = useState(false);
 
   useEffect(() => {
     if (dbUser) {
       fetchDashboardData();
+    }
+    
+    // Check if Canvas is configured and fetch data
+    setCanvasConfigured(canvasService.isConfigured());
+    if (canvasService.isConfigured()) {
+      fetchCanvasData();
     }
   }, [dbUser]);
 
@@ -160,12 +174,56 @@ export const Dashboard = () => {
     }
   };
 
+  const fetchCanvasData = async () => {
+    setCanvasLoading(true);
+    try {
+      const data = await canvasService.getAllData();
+      setCanvasData(data);
+    } catch (error) {
+      console.error('Error fetching Canvas data:', error);
+    } finally {
+      setCanvasLoading(false);
+    }
+  };
+
+  const formatDueDate = (dueDate: string) => {
+    const date = new Date(dueDate);
+    const now = new Date();
+    const diffTime = date.getTime() - now.getTime();
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) return 'Due today';
+    if (diffDays === 1) return 'Due tomorrow';
+    if (diffDays < 7) return `Due in ${diffDays} days`;
+    
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
   if (loading) {
     return <div className="p-6">Loading dashboard...</div>;
   }
 
   return (
     <div className="space-y-6 p-6">
+      <div className="flex items-center justify-between mb-4">
+        <h1 className="text-3xl font-bold">Dashboard</h1>
+        {canvasConfigured && (
+          <Badge variant="outline" className="gap-2">
+            <BookOpen className="h-4 w-4" />
+            Canvas Connected
+          </Badge>
+        )}
+      </div>
+
+      <Tabs defaultValue="flashcards" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="flashcards">Flashcard Analytics</TabsTrigger>
+          {canvasConfigured && (
+            <TabsTrigger value="canvas">Canvas LMS</TabsTrigger>
+          )}
+        </TabsList>
+
+        <TabsContent value="flashcards" className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
@@ -266,6 +324,140 @@ export const Dashboard = () => {
           </CardContent>
         </Card>
       </div>
+        </TabsContent>
+
+        {canvasConfigured && (
+          <TabsContent value="canvas" className="space-y-6">
+            {canvasLoading ? (
+              <div className="text-center p-8">Loading Canvas data...</div>
+            ) : (
+              <>
+                {/* Canvas Summary Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Active Courses</CardTitle>
+                      <BookOpen className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">{canvasData?.activeCourses.length || 0}</div>
+                      <p className="text-xs text-muted-foreground">
+                        Student enrollments
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Total Assignments</CardTitle>
+                      <CheckCircle2 className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">
+                        {canvasData?.currentAssignments.length || 0}
+                      </div>
+                      <p className="text-xs text-muted-foreground">From all courses</p>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                      <CardTitle className="text-sm font-medium">Due This Week</CardTitle>
+                      <AlertCircle className="h-4 w-4 text-muted-foreground" />
+                    </CardHeader>
+                    <CardContent>
+                      <div className="text-2xl font-bold">
+                        {canvasData?.upcomingAssignments.length || 0}
+                      </div>
+                      <p className="text-xs text-muted-foreground">Upcoming deadlines</p>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Active Courses List */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Active Courses</CardTitle>
+                    <CardDescription>Courses where you are enrolled as a student</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2">
+                      {!canvasData?.activeCourses || canvasData.activeCourses.length === 0 ? (
+                        <p className="text-muted-foreground text-center py-4">
+                          No active courses found
+                        </p>
+                      ) : (
+                        canvasData.activeCourses.map((course) => (
+                          <div 
+                            key={course.id} 
+                            className="flex items-center justify-between p-3 rounded-lg bg-accent/50"
+                          >
+                            <div>
+                              <h4 className="text-sm font-semibold">{course.name}</h4>
+                              <p className="text-xs text-muted-foreground">{course.course_code}</p>
+                            </div>
+                            <Badge variant="outline">{course.course_code}</Badge>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                {/* Upcoming Assignments */}
+                <Card>
+                  <CardHeader>
+                    <CardTitle>Upcoming Assignments</CardTitle>
+                    <CardDescription>Assignments due in the next 7 days</CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-4">
+                      {!canvasData?.upcomingAssignments || canvasData.upcomingAssignments.length === 0 ? (
+                        <p className="text-muted-foreground text-center py-4">
+                          No upcoming assignments in the next week
+                        </p>
+                      ) : (
+                        canvasData.upcomingAssignments.map((assignment) => (
+                          <div 
+                            key={assignment.id} 
+                            className="flex items-start justify-between p-4 rounded-lg bg-accent/50 hover:bg-accent/70 transition-colors"
+                          >
+                            <div className="flex-1 space-y-1">
+                              <h4 className="text-sm font-semibold">{assignment.name}</h4>
+                              <p className="text-xs text-muted-foreground">
+                                {assignment.course_name} ({assignment.course_code})
+                              </p>
+                              {assignment.description && (
+                                <p 
+                                  className="text-xs text-muted-foreground line-clamp-2"
+                                  dangerouslySetInnerHTML={{ 
+                                    __html: assignment.description.replace(/<[^>]*>/g, '').substring(0, 100) 
+                                  }}
+                                />
+                              )}
+                              <div className="flex items-center gap-2 mt-2">
+                                <Badge variant="outline" className="text-xs">
+                                  {assignment.points_possible} points
+                                </Badge>
+                                {assignment.due_at && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {formatDueDate(assignment.due_at)}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                            <Clock className="h-4 w-4 text-muted-foreground ml-4 flex-shrink-0" />
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              </>
+            )}
+          </TabsContent>
+        )}
+      </Tabs>
     </div>
   );
 };

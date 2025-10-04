@@ -41,18 +41,46 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const fetchDbUser = async (authUser: User) => {
     try {
+      // Try to fetch existing user
       const { data, error } = await supabase
         .from('users')
         .select('*')
         .eq('auth_id', authUser.id)
         .single();
       
-      if (error) {
-        console.error('Error fetching database user:', error);
-        return null;
+      // If user exists, return it
+      if (data && !error) {
+        return data;
       }
       
-      return data;
+      // If user doesn't exist, create it
+      if (error && error.code === 'PGRST116') {
+        console.log('User not found in database, creating new record...');
+        
+        const displayName = authUser.user_metadata?.display_name || 
+                           authUser.email?.split('@')[0] || 
+                           'User';
+        
+        const { data: newUser, error: insertError } = await supabase
+          .from('users')
+          .insert({
+            auth_id: authUser.id,
+            display_name: displayName
+          })
+          .select()
+          .single();
+        
+        if (insertError) {
+          console.error('Error creating database user:', insertError);
+          return null;
+        }
+        
+        console.log('Created new user record:', newUser);
+        return newUser;
+      }
+      
+      console.error('Error fetching database user:', error);
+      return null;
     } catch (error) {
       console.error('Error fetching database user:', error);
       return null;

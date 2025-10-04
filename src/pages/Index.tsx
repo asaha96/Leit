@@ -45,41 +45,54 @@ const Index = () => {
   const handleDeckSelected = async (deckId: string) => {
     setCurrentDeckId(deckId);
     
-    // Load cards for the deck
-    const cards = await DatabaseService.getDueCards(deckId);
-    if (cards.length === 0) {
-      toast({
-        title: "No Cards Available",
-        description: "This deck has no cards to study.",
-        variant: "destructive",
-      });
-      return;
-    }
+    try {
+      // Ensure session manager is initialized with current user
+      await sessionManager.initialize();
+      
+      // Load cards for the deck
+      const cards = await DatabaseService.getDueCards(deckId);
+      if (cards.length === 0) {
+        toast({
+          title: "No Cards Available",
+          description: "This deck has no cards to study.",
+          variant: "destructive",
+        });
+        return;
+      }
 
-    // Convert database cards to flashcard format
-    const flashcards = cards.map(card => ({
-      id: card.id,
-      front: card.front,
-      back: card.back,
-      hint: card.hints.length > 0 ? card.hints[0] : undefined,
-      answers: card.answers.length > 0 ? card.answers : [card.back],
-      tags: card.tags,
-    }));
+      // Convert database cards to flashcard format
+      const flashcards = cards.map(card => ({
+        id: card.id,
+        front: card.front,
+        back: card.back,
+        hint: card.hints.length > 0 ? card.hints[0] : undefined,
+        answers: card.answers.length > 0 ? card.answers : [card.back],
+        tags: card.tags,
+      }));
 
-    setCurrentCards(flashcards);
-    
-    // Start session
-    const sessionId = await sessionManager.startSession(deckId);
-    if (sessionId) {
-      setCurrentView('session');
-      toast({
-        title: "Session Started",
-        description: `Starting study session with ${cards.length} cards.`,
-      });
-    } else {
+      setCurrentCards(flashcards);
+      
+      // Start session
+      const sessionId = await sessionManager.startSession(deckId);
+      if (sessionId) {
+        setCurrentView('session');
+        toast({
+          title: "Session Started",
+          description: `Starting study session with ${cards.length} cards.`,
+        });
+      } else {
+        toast({
+          title: "Session Error",
+          description: "Failed to start session. Please try refreshing the page.",
+          variant: "destructive",
+        });
+        console.error('Failed to start session - session ID is null');
+      }
+    } catch (error) {
+      console.error('Error in handleDeckSelected:', error);
       toast({
         title: "Error",
-        description: "Failed to start session.",
+        description: "An error occurred while starting the session.",
         variant: "destructive",
       });
     }

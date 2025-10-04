@@ -123,7 +123,7 @@ export const Practice = () => {
       setResults([]);
 
       // Create practice session
-      const { data: session } = await supabase
+      const { data: session, error: sessionError } = await supabase
         .from('sessions')
         .insert({
           user_id: dbUser.id,
@@ -132,6 +132,12 @@ export const Practice = () => {
         })
         .select()
         .single();
+
+      if (sessionError) {
+        console.error('Error creating practice session:', sessionError);
+        alert('Failed to create practice session. Please try again.');
+        return;
+      }
 
       if (session) {
         setSessionId(session.id);
