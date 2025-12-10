@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button';
 import { useAuth } from '@/hooks/useAuth';
+import { ThemeToggle } from '@/components/ThemeToggle';
 
 interface NavigationProps {
   activeTab: string;
@@ -45,6 +46,7 @@ export const Navigation = ({ activeTab, onTabChange }: NavigationProps) => {
             <span className="text-sm text-muted-foreground">
               Welcome, {dbUser?.display_name || 'User'}
             </span>
+          <ThemeToggle />
             <Button 
               variant="outline" 
               onClick={signOut}

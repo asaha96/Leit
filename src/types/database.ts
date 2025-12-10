@@ -23,6 +23,7 @@ export interface Card {
 
 export interface User {
   id: string;
+  email?: string;
   external_sub?: string;
   display_name?: string;
   created_at: string;
@@ -43,6 +44,7 @@ export interface SessionEvent {
   session_id: string;
   card_id?: string;
   response?: string;
+  correct?: boolean;
   ai_score?: number;
   quality?: string;
   next_due?: string;

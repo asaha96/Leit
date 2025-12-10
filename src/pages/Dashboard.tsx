@@ -1,12 +1,12 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Calendar, TrendingUp, Target, Clock, BookOpen, CheckCircle2, AlertCircle } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import { canvasService, type CanvasData, type CanvasAssignment } from '@/services/canvasService';
+import { canvasService, type CanvasData } from '@/services/canvasService';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { DatabaseService } from '@/services/database';
 
 interface DashboardMetrics {
   masteryPct: number;
@@ -59,16 +59,8 @@ export const Dashboard = () => {
     if (!dbUser) return;
 
     try {
-      // Fetch overall metrics
-      const { data: sessions } = await supabase
-        .from('sessions')
-        .select('*, session_events(*)')
-        .eq('user_id', dbUser.id)
-        .order('started_at', { ascending: false });
-
-      const { data: allCards } = await supabase
-        .from('cards')
-        .select('*');
+      const sessions = await DatabaseService.getSessionsWithEvents();
+      const allCards = await DatabaseService.getAllCards();
 
       // Calculate metrics
       let totalEvents = 0;
@@ -78,16 +70,21 @@ export const Dashboard = () => {
 
       sessions?.forEach(session => {
         session.session_events?.forEach((event: any) => {
-          if (event.ai_score !== null) {
+          // Normalize ai_score to 0–1 regardless of storage (0–1 or 0–100)
+          const rawScore = Number(event.ai_score);
+          const hasScore = Number.isFinite(rawScore);
+          const normalizedScore = hasScore ? (rawScore > 1 ? rawScore / 100 : rawScore) : null;
+
+          if (normalizedScore !== null) {
             totalEvents++;
-            totalScore += event.ai_score;
+            totalScore += normalizedScore;
             
             // Group by date for line chart
             const date = new Date(event.created_at).toISOString().split('T')[0];
             if (!dailyScores[date]) {
               dailyScores[date] = { total: 0, count: 0 };
             }
-            dailyScores[date].total += event.ai_score;
+            dailyScores[date].total += normalizedScore;
             dailyScores[date].count++;
           }
 
@@ -99,6 +96,7 @@ export const Dashboard = () => {
       });
 
       const masteryPct = totalEvents > 0 ? (totalScore / totalEvents) * 100 : 0;
+      const clampedMastery = Math.max(0, Math.min(100, Math.round(masteryPct)));
 
       // Calculate streak (simplified - consecutive days with sessions)
       const recentDays = sessions?.reduce((acc: string[], session) => {
@@ -110,7 +108,7 @@ export const Dashboard = () => {
       const streakDays = Math.min(recentDays.length, 7); // Last 7 days max
 
       setMetrics({
-        masteryPct: Math.round(masteryPct),
+        masteryPct: clampedMastery,
         dueToday: dueCount,
         streakDays,
         totalCards: allCards?.length || 0
@@ -132,34 +130,32 @@ export const Dashboard = () => {
       
       sessions?.forEach(session => {
         session.session_events?.forEach((event: any) => {
-          if (event.card_id && event.ai_score !== null) {
+          const rawScore = Number(event.ai_score);
+          const hasScore = Number.isFinite(rawScore);
+          const normalizedScore = hasScore ? (rawScore > 1 ? rawScore / 100 : rawScore) : null;
+
+          if (event.card_id && normalizedScore !== null) {
             if (!cardScores[event.card_id]) {
               cardScores[event.card_id] = { scores: [], front: '' };
             }
-            cardScores[event.card_id].scores.push(event.ai_score);
+            cardScores[event.card_id].scores.push(normalizedScore);
           }
         });
       });
 
+      const cardMap = new Map(allCards?.map(card => [card.id, card.front]));
+
       // Get card details and calculate averages
-      const weakCardData = await Promise.all(
-        Object.entries(cardScores)
-          .filter(([_, data]) => data.scores.length >= 2) // At least 2 attempts
-          .map(async ([cardId, data]) => {
-            const { data: card } = await supabase
-              .from('cards')
-              .select('front')
-              .eq('id', cardId)
-              .single();
-            
-            const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
-            return {
-              id: cardId,
-              front: card?.front || 'Unknown',
-              avgScore: Math.round(avgScore * 100)
-            };
-          })
-      );
+      const weakCardData = Object.entries(cardScores)
+        .filter(([_, data]) => data.scores.length >= 1) // show even single-attempt cards
+        .map(([cardId, data]) => {
+          const avgScore = data.scores.reduce((a, b) => a + b, 0) / data.scores.length;
+          return {
+            id: cardId,
+            front: cardMap.get(cardId) || 'Unknown',
+            avgScore: Math.round(avgScore * 100)
+          };
+        });
 
       const sortedWeakCards = weakCardData
         .sort((a, b) => a.avgScore - b.avgScore)

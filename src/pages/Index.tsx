@@ -10,8 +10,7 @@ import { DeckPicker } from '@/components/DeckPicker';
 import { FlashcardSession } from '@/components/FlashcardSession';
 import { SessionComplete } from '@/components/SessionComplete';
 import { useToast } from '@/hooks/use-toast';
-import type { Card as FlashCard } from '@/types/flashcard';
-import type { SessionStats } from '@/types/flashcard';
+import type { Card as FlashCard, SessionStats, SessionEntry } from '@/types/flashcard';
 
 const Index = () => {
   const { user, loading } = useAuth();
@@ -98,27 +97,71 @@ const Index = () => {
     }
   };
 
-  const handleSessionComplete = async (stats: SessionStats) => {
-    const result = await sessionManager.finishSession();
-    
-    if (result) {
-      setSessionStats({
-        ...stats,
-        totalCards: result.totalCards,
-        correctAnswers: result.correctAnswers,
-        accuracy: result.accuracy,
-        averageScore: result.accuracy // Use accuracy as average score for now
+  const handleSessionComplete = async (stats: SessionStats, sessionEntries: SessionEntry[]) => {
+    try {
+      // Show saving toast
+      toast({
+        title: "Saving session...",
+        description: "Recording your progress",
       });
-    } else {
+
+      // Record all session entries to database
+      if (sessionManager.getCurrentSessionId()) {
+        for (const entry of sessionEntries) {
+          const card = currentCards.find(c => c.id === entry.cardId);
+          if (card) {
+            await sessionManager.recordAnswer(
+              entry.cardId,
+              entry.response,
+              entry.quality,
+              card.answers
+            );
+          }
+        }
+      }
+      
+      // Finish session in database
+      const result = await sessionManager.finishSession();
+      
+      // Use database result if available, otherwise use local stats
+      if (result && result.totalCards > 0) {
+        setSessionStats({
+          totalCards: result.totalCards,
+          correctAnswers: result.correctAnswers,
+          accuracy: result.accuracy,
+          averageScore: result.accuracy
+        });
+        
+        toast({
+          title: "Session Complete!",
+          description: `You scored ${Math.round(result.accuracy * 100)}% accuracy. Progress saved!`,
+        });
+      } else {
+        // Fall back to local stats if database save failed
+        console.warn('Database save returned no data, using local stats');
+        setSessionStats(stats);
+        
+        toast({
+          title: "Session Complete!",
+          description: `You scored ${Math.round(stats.accuracy * 100)}% accuracy.`,
+          variant: "default",
+        });
+      }
+      
+      setCurrentView('complete');
+    } catch (error) {
+      console.error('Error saving session:', error);
+      
+      // Still show completion with local stats
       setSessionStats(stats);
+      setCurrentView('complete');
+      
+      toast({
+        title: "Session Complete!",
+        description: `You scored ${Math.round(stats.accuracy * 100)}% accuracy. (Progress may not be saved)`,
+        variant: "destructive",
+      });
     }
-    
-    setCurrentView('complete');
-    
-    toast({
-      title: "Session Complete!",
-      description: `You scored ${Math.round((result?.accuracy || stats.accuracy) * 100)}% accuracy.`,
-    });
   };
 
   const handleRestartSession = () => {

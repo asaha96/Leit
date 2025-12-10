@@ -6,9 +6,9 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
 import { CheckCircle, XCircle, ArrowRight } from 'lucide-react';
-import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from '@/hooks/useAuth';
-import type { Deck, Card as DatabaseCard } from '@/types/database';
+import type { Deck } from '@/types/database';
+import { DatabaseService } from '@/services/database';
 
 interface PracticeQuestion {
   id: string;
@@ -42,11 +42,7 @@ export const Practice = () => {
   }, []);
 
   const fetchDecks = async () => {
-    const { data } = await supabase
-      .from('decks')
-      .select('*')
-      .order('created_at', { ascending: false });
-    
+    const data = await DatabaseService.getDecks();
     if (data) setDecks(data);
   };
 
@@ -57,10 +53,7 @@ export const Practice = () => {
     
     try {
       // Get cards from selected deck
-      const { data: cards } = await supabase
-        .from('cards')
-        .select('*')
-        .eq('deck_id', selectedDeck);
+      const cards = await DatabaseService.getCardsByDeck(selectedDeck);
 
       if (!cards || cards.length === 0) {
         alert('No cards found in selected deck');
@@ -123,18 +116,13 @@ export const Practice = () => {
       setResults([]);
 
       // Create practice session
-      const { data: session, error: sessionError } = await supabase
-        .from('sessions')
-        .insert({
-          user_id: dbUser.id,
-          deck_id: selectedDeck,
-          mode: 'practice'
-        })
-        .select()
-        .single();
+      const session = await DatabaseService.createSession({
+        deck_id: selectedDeck,
+        user_id: dbUser.id
+      } as any);
 
-      if (sessionError) {
-        console.error('Error creating practice session:', sessionError);
+      if (!session) {
+        console.error('Error creating practice session');
         alert('Failed to create practice session. Please try again.');
         return;
       }
@@ -158,15 +146,13 @@ export const Practice = () => {
     const isCorrect = answer.toLowerCase().trim() === currentQuestion.correctAnswer.toLowerCase().trim();
 
     // Record the event
-    await supabase
-      .from('session_events')
-      .insert({
-        session_id: sessionId,
-        card_id: currentQuestion.cardId,
-        response: answer,
-        correct: isCorrect,
-        ai_score: isCorrect ? 1 : 0
-      });
+    await DatabaseService.createSessionEvent({
+      session_id: sessionId,
+      card_id: currentQuestion.cardId,
+      response: answer,
+      correct: isCorrect,
+      ai_score: isCorrect ? 1 : 0,
+    });
 
     setResults([...results, {
       correct: isCorrect,
@@ -194,13 +180,7 @@ export const Practice = () => {
     const correctCount = results.filter(r => r.correct).length;
     const finalScore = results.length > 0 ? correctCount / results.length : 0;
 
-    await supabase
-      .from('sessions')
-      .update({
-        finished_at: new Date().toISOString(),
-        score: finalScore
-      })
-      .eq('id', sessionId);
+    await DatabaseService.finishSession(sessionId, finalScore);
 
     // Reset state
     setQuestions([]);
