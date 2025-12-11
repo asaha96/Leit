@@ -20,20 +20,8 @@ export default defineConfig(({ mode }) => {
       port: 8080,
       proxy: {
         '/api/canvas': {
-          target: 'https://canvas.instructure.com/api/v1',
+          target: 'http://localhost:3001',
           changeOrigin: true,
-          rewrite: (path) => path.replace(/^\/api\/canvas/, ''),
-          configure: (proxy, _options) => {
-            proxy.on('proxyReq', (proxyReq, req, _res) => {
-              // Add Canvas API key to requests from environment
-              const canvasApiKey = env.VITE_CANVAS_API_KEY;
-              console.log('🔄 Proxy request to:', req.url);
-              console.log('🔑 Adding auth header:', canvasApiKey ? 'YES ✅' : 'NO ❌');
-              if (canvasApiKey) {
-                proxyReq.setHeader('Authorization', `Bearer ${canvasApiKey}`);
-              }
-            });
-          },
         },
         '/api': {
           target: 'http://localhost:3001',

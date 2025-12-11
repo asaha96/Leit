@@ -5,16 +5,20 @@ import { SessionProgress } from './SessionProgress';
 import { SessionComplete } from './SessionComplete';
 import { Quality, calculateNextDue } from '@/utils/scheduler';
 import { evaluateAnswer } from '@/utils/evaluator';
+import { DatabaseService } from '@/services/database';
+import { Button } from '@/components/ui/button';
 
 interface FlashcardSessionProps {
   cards: Card[];
   onSessionComplete: (stats: SessionStats, sessions: SessionEntry[]) => void;
+  onExit?: () => void;
 }
 
-export function FlashcardSession({ cards, onSessionComplete }: FlashcardSessionProps) {
+export function FlashcardSession({ cards, onSessionComplete, onExit }: FlashcardSessionProps) {
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [sessionEntries, setSessionEntries] = useState<SessionEntry[]>([]);
   const [isComplete, setIsComplete] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
   const [sessionStats, setSessionStats] = useState<SessionStats>({
     totalCards: cards.length,
     correctAnswers: 0,
@@ -26,7 +30,7 @@ export function FlashcardSession({ cards, onSessionComplete }: FlashcardSessionP
   const isLastCard = currentCardIndex === cards.length - 1;
 
   const handleAnswer = useCallback((response: string, quality: Quality) => {
-    if (!currentCard) return;
+    if (!currentCard || isPaused) return;
 
     // Evaluate the answer
     const evaluation = evaluateAnswer(response, currentCard.answers);
@@ -70,12 +74,18 @@ export function FlashcardSession({ cards, onSessionComplete }: FlashcardSessionP
     } else {
       setCurrentCardIndex(prev => prev + 1);
     }
-  }, [currentCard, sessionEntries, sessionStats, cards.length, isLastCard, onSessionComplete]);
+
+    // Fire-and-forget schedule update
+    DatabaseService.updateCardSchedule(currentCard.id, quality).catch((err) => {
+      console.error('Failed to update card schedule', err);
+    });
+  }, [currentCard, sessionEntries, sessionStats, cards.length, isLastCard, onSessionComplete, isPaused]);
 
   const handleRestart = () => {
     setCurrentCardIndex(0);
     setSessionEntries([]);
     setIsComplete(false);
+    setIsPaused(false);
     setSessionStats({
       totalCards: cards.length,
       correctAnswers: 0,
@@ -136,17 +146,38 @@ export function FlashcardSession({ cards, onSessionComplete }: FlashcardSessionP
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      <SessionProgress
-        currentCard={currentCardIndex + 1}
-        totalCards={cards.length}
-        accuracy={sessionStats.accuracy}
-      />
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <div className="flex-1">
+          <SessionProgress
+            currentCard={currentCardIndex + 1}
+            totalCards={cards.length}
+            accuracy={sessionStats.accuracy}
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          {onExit && (
+            <Button variant="ghost" onClick={onExit}>
+              Exit
+            </Button>
+          )}
+          <Button variant="outline" onClick={() => setIsPaused(!isPaused)}>
+            {isPaused ? 'Resume' : 'Pause'}
+          </Button>
+        </div>
+      </div>
+
+      {isPaused && (
+        <div className="p-3 rounded-lg border border-border bg-muted text-sm text-muted-foreground">
+          Session paused. Resume to continue answering.
+        </div>
+      )}
       
       <FlashcardView
         card={currentCard}
         onAnswer={handleAnswer}
         cardNumber={currentCardIndex + 1}
         totalCards={cards.length}
+        disabled={isPaused}
       />
     </div>
   );

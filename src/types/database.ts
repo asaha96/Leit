@@ -17,6 +17,10 @@ export interface Card {
   answers: string[];
   tags: string[];
   media_refs: any;
+  due_at?: string | null;
+  ease?: number | null;
+  interval_days?: number | null;
+  lapses?: number | null;
   created_at: string;
   updated_at: string;
 }

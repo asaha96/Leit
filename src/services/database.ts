@@ -68,9 +68,19 @@ export class DatabaseService {
     }
   }
 
-  static async getDueCards(deckId: string): Promise<Card[]> {
-    // For now, return all cards. Later we'll filter by next_due from session_events
-    return this.getCardsByDeck(deckId);
+  static async getDueCards(deckId: string, nowIso?: string): Promise<Card[]> {
+    try {
+      const now = nowIso ? new Date(nowIso) : new Date();
+      const res = await apiFetch(`/decks/${deckId}/cards`);
+      const cards: Card[] = res.data || [];
+      return cards.filter((c) => {
+        if (!c.due_at) return true; // treat unscheduled as due/new
+        return new Date(c.due_at) <= now;
+      });
+    } catch (error) {
+      console.error('Error fetching due cards:', error);
+      return [];
+    }
   }
 
   static async createCard(card: Omit<Card, 'id' | 'created_at' | 'updated_at'>): Promise<Card | null> {
@@ -157,6 +167,19 @@ export class DatabaseService {
     } catch (error) {
       console.error('Error fetching sessions with events:', error);
       return [];
+    }
+  }
+
+  static async updateCardSchedule(cardId: string, quality: 'again' | 'hard' | 'good' | 'easy') {
+    try {
+      const res = await apiFetch(`/cards/${cardId}/review`, {
+        method: 'POST',
+        body: JSON.stringify({ quality }),
+      });
+      return res.data;
+    } catch (error) {
+      console.error('Error updating card schedule:', error);
+      return null;
     }
   }
 }

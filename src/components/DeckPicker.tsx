@@ -6,13 +6,14 @@ import { DeckImporter } from '@/services/deckImporter';
 import type { Deck } from '@/types/database';
 
 interface DeckPickerProps {
-  onDeckSelected: (deckId: string) => void;
+  onDeckSelected: (deckId: string, options?: { dueOnly?: boolean }) => void;
 }
 
 export function DeckPicker({ onDeckSelected }: DeckPickerProps) {
   const [decks, setDecks] = useState<Deck[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
+  const [dueOnly, setDueOnly] = useState(true);
 
   useEffect(() => {
     loadDecks();
@@ -79,7 +80,8 @@ export function DeckPicker({ onDeckSelected }: DeckPickerProps) {
       
       if (result.deck) {
         await loadDecks();
-        onDeckSelected(result.deck.id);
+        onDeckSelected(result.deck.id, { dueOnly });
+        onDeckSelected(result.deck.id, { dueOnly });
       } else {
         alert('Failed to create demo deck');
       }
@@ -102,36 +104,50 @@ export function DeckPicker({ onDeckSelected }: DeckPickerProps) {
   }
 
   return (
-    <div className="container max-w-4xl mx-auto p-6 space-y-6">
-      <div className="text-center">
-        <h1 className="text-3xl font-bold text-primary mb-2">Leit Flashcards</h1>
-        <p className="text-muted-foreground">Choose a deck to start your learning session</p>
+    <div className="container max-w-5xl mx-auto p-6 space-y-8">
+      <div className="text-center space-y-2">
+        <p className="text-sm uppercase tracking-wide text-muted-foreground">Study</p>
+        <h1 className="text-4xl font-bold text-primary">Leit Flashcards</h1>
+        <p className="text-muted-foreground text-sm">Choose a deck to start your session</p>
       </div>
 
-      <div className="flex gap-4 justify-center">
-        <Button 
-          onClick={handleQuickDemo}
-          disabled={importing}
-          className="bg-gradient-primary text-white"
-        >
-          {importing ? 'Creating...' : 'Quick Demo'}
-        </Button>
-        <Button 
-          onClick={handleCSVImport}
-          disabled={importing}
-          variant="outline"
-        >
-          {importing ? 'Importing...' : 'Import CSV'}
-        </Button>
-      </div>
+      <Card className="bg-card text-card-foreground border-border shadow-card">
+        <CardContent className="py-6">
+          <div className="flex gap-4 flex-wrap items-center justify-center">
+            <Button 
+              onClick={handleQuickDemo}
+              disabled={importing}
+              className="bg-gradient-primary text-white"
+            >
+              {importing ? 'Creating...' : 'Quick Demo'}
+            </Button>
+            <Button 
+              onClick={handleCSVImport}
+              disabled={importing}
+              variant="outline"
+            >
+              {importing ? 'Importing...' : 'Import CSV'}
+            </Button>
+            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+              <input
+                type="checkbox"
+                checked={dueOnly}
+                onChange={(e) => setDueOnly(e.target.checked)}
+                className="h-4 w-4"
+              />
+              Due only
+            </label>
+          </div>
+        </CardContent>
+      </Card>
 
       {decks.length > 0 ? (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {decks.map((deck) => (
             <Card 
               key={deck.id} 
-              className="cursor-pointer transition-all hover:shadow-lg hover:scale-105 border-muted"
-              onClick={() => onDeckSelected(deck.id)}
+              className="cursor-pointer transition-all hover:shadow-lg hover:scale-[1.01] border-border bg-card text-card-foreground hover:bg-card/90"
+              onClick={() => onDeckSelected(deck.id, { dueOnly })}
             >
               <CardHeader>
                 <CardTitle className="text-primary">{deck.title}</CardTitle>
@@ -159,7 +175,7 @@ export function DeckPicker({ onDeckSelected }: DeckPickerProps) {
           ))}
         </div>
       ) : (
-        <Card className="text-center p-8">
+        <Card className="text-center p-8 bg-card text-card-foreground">
           <CardContent>
             <p className="text-muted-foreground mb-4">No decks available</p>
             <p className="text-sm text-muted-foreground">

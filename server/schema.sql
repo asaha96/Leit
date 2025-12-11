@@ -31,6 +31,11 @@ CREATE TABLE IF NOT EXISTS cards (
   answers TEXT[] NOT NULL DEFAULT '{}',
   tags TEXT[] NOT NULL DEFAULT '{}',
   media_refs JSONB,
+  -- Scheduling fields for spaced repetition
+  due_at TIMESTAMPTZ,
+  ease REAL NOT NULL DEFAULT 2.5,
+  interval_days REAL NOT NULL DEFAULT 1,
+  lapses INTEGER NOT NULL DEFAULT 0,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

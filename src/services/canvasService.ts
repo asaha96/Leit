@@ -3,7 +3,10 @@
  * Fetches only: Active Courses, Current Assignments, Upcoming Assignments
  */
 
-const CANVAS_API_URL = '/api/canvas';
+import { apiFetch } from '@/lib/api';
+
+// apiFetch prefixes with /api, so use /canvas here to avoid double /api
+const CANVAS_API_URL = '/canvas';
 
 export interface CanvasCourse {
   id: number;
@@ -33,22 +36,8 @@ class CanvasService {
    * Make a request to Canvas API via proxy
    */
   private async makeRequest<T>(endpoint: string): Promise<T> {
-    const url = `${CANVAS_API_URL}${endpoint}`;
-    
     try {
-      const response = await fetch(url, {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        // Don't throw on errors, just return empty array
-        console.warn(`Canvas API returned ${response.status} for ${endpoint}`);
-        return [] as T;
-      }
-
-      return await response.json();
+      return await apiFetch(`${CANVAS_API_URL}${endpoint}`);
     } catch (error) {
       console.warn('Canvas API request failed:', error);
       return [] as T;
@@ -182,8 +171,24 @@ class CanvasService {
   /**
    * Check if Canvas API is configured
    */
-  isConfigured(): boolean {
-    return true; // Proxy handles this
+  async isConfigured(): Promise<boolean> {
+    try {
+      const res = await apiFetch('/canvas/token');
+      return !!res.exists;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async saveToken(token: string) {
+    await apiFetch('/canvas/token', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    });
+  }
+
+  async deleteToken() {
+    await apiFetch('/canvas/token', { method: 'DELETE' });
   }
 }
 

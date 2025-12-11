@@ -2,6 +2,8 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
+import crypto from "crypto";
+import dayjs from "dayjs";
 import { Pool } from "pg";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
@@ -13,23 +15,62 @@ dotenv.config({ path: path.resolve(process.cwd(), ".env.local"), override: true 
 const app = express();
 const port = process.env.PORT || 3001;
 const jwtSecret = process.env.JWT_SECRET || "dev-secret-change-me";
+const canvasTokenSecret = process.env.CANVAS_TOKEN_SECRET || jwtSecret;
+const canvasApiBase = "https://canvas.instructure.com/api/v1";
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL || "postgres://localhost:5432/leit",
 });
 
+// Ensure storage for per-user Canvas tokens (encrypted)
+const ensureCanvasTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS canvas_tokens (
+      user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+      iv BYTEA NOT NULL,
+      tag BYTEA NOT NULL,
+      token_encrypted BYTEA NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+};
+
+ensureCanvasTable().catch((err) => {
+  console.error("Failed to ensure canvas_tokens table", err);
+});
+
 app.use(cors({
-  origin: [
-    "http://127.0.0.1:8080",
-    "http://localhost:8080",
-    "http://127.0.0.1:8081",
-    "http://localhost:8081",
-    "http://127.0.0.1:8082",
-    "http://localhost:8082",
-  ],
+  origin: (origin, callback) => {
+    // Allow local dev on any port for localhost / 127.0.0.1
+    if (!origin) return callback(null, true);
+    const allowed =
+      /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
+    if (allowed) return callback(null, true);
+    return callback(new Error("Not allowed by CORS"));
+  },
   credentials: true,
 }));
 app.use(express.json());
+
+const deriveKey = (secret) => crypto.createHash("sha256").update(secret).digest();
+
+const encryptToken = (token) => {
+  const iv = crypto.randomBytes(12);
+  const key = deriveKey(canvasTokenSecret);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const encrypted = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return { iv, tag, encrypted };
+};
+
+const decryptToken = (iv, tag, encrypted) => {
+  const key = deriveKey(canvasTokenSecret);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+  decipher.setAuthTag(tag);
+  const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+  return decrypted.toString("utf8");
+};
 
 const generateToken = (userId) =>
   jwt.sign({ userId }, jwtSecret, { expiresIn: "7d" });
@@ -130,6 +171,156 @@ app.get("/api/auth/me", authMiddleware, async (req, res) => {
     res.json({ user });
   } catch (error) {
     console.error("Me error", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// --- Canvas Token Management ---
+app.get("/api/canvas/token", authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT 1 FROM canvas_tokens WHERE user_id = $1",
+      [req.userId]
+    );
+    res.json({ exists: rows.length > 0 });
+  } catch (error) {
+    console.error("Canvas token exists check error", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.post("/api/canvas/token", authMiddleware, async (req, res) => {
+  const { token } = req.body;
+  if (!token) {
+    return res.status(400).json({ error: "Token is required" });
+  }
+  try {
+    const { iv, tag, encrypted } = encryptToken(token);
+    await pool.query(
+      `INSERT INTO canvas_tokens (user_id, iv, tag, token_encrypted)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (user_id) DO UPDATE SET iv = EXCLUDED.iv, tag = EXCLUDED.tag, token_encrypted = EXCLUDED.token_encrypted, updated_at = NOW()`,
+      [req.userId, iv, tag, encrypted]
+    );
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Canvas token save error", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+app.delete("/api/canvas/token", authMiddleware, async (req, res) => {
+  try {
+    await pool.query("DELETE FROM canvas_tokens WHERE user_id = $1", [req.userId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error("Canvas token delete error", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// Proxy Canvas requests with per-user token
+app.use("/api/canvas", authMiddleware, async (req, res) => {
+  try {
+    const { rows } = await pool.query(
+      "SELECT iv, tag, token_encrypted FROM canvas_tokens WHERE user_id = $1",
+      [req.userId]
+    );
+    if (rows.length === 0) {
+      return res.status(401).json({ error: "Canvas token not set" });
+    }
+    const { iv, tag, token_encrypted } = rows[0];
+    const token = decryptToken(iv, tag, token_encrypted);
+
+    const targetPath = req.originalUrl.replace("/api/canvas", "");
+    const targetUrl = `${canvasApiBase}${targetPath}`;
+
+    const method = req.method;
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    };
+
+    const body =
+      method === "GET" || method === "HEAD" ? undefined : JSON.stringify(req.body);
+
+    const canvasResp = await fetch(targetUrl, {
+      method,
+      headers,
+      body,
+    });
+
+    const text = await canvasResp.text();
+    res.status(canvasResp.status);
+    // Forward minimal headers
+    res.set("Content-Type", canvasResp.headers.get("content-type") || "application/json");
+    return res.send(text);
+  } catch (error) {
+    console.error("Canvas proxy error", error);
+    return res.status(500).json({ error: "Canvas proxy failed" });
+  }
+});
+
+// --- Spaced Repetition: update card schedule ---
+const qualityToSM2 = (quality) => {
+  switch (quality) {
+    case "easy":
+      return 5;
+    case "good":
+      return 4;
+    case "hard":
+      return 3;
+    case "again":
+    default:
+      return 1;
+  }
+};
+
+const updateSchedule = (card, qualityStr) => {
+  const q = qualityToSM2(qualityStr);
+  let ease = card.ease ?? 2.5;
+  let interval = card.interval_days ?? 1;
+  let lapses = card.lapses ?? 0;
+
+  if (q < 3) {
+    lapses += 1;
+    interval = 1;
+  } else {
+    if (interval < 1) interval = 1;
+    interval = interval * ease;
+  }
+
+  // SM-2 ease update
+  ease = ease + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
+  if (ease < 1.3) ease = 1.3;
+
+  const due_at = dayjs().add(interval, "day").toISOString();
+  return { ease, interval_days: interval, lapses, due_at };
+};
+
+app.post("/api/cards/:id/review", authMiddleware, async (req, res) => {
+  const { quality } = req.body;
+  if (!quality) return res.status(400).json({ error: "quality is required" });
+  try {
+    const { rows } = await pool.query("SELECT ease, interval_days, lapses FROM cards WHERE id = $1", [
+      req.params.id,
+    ]);
+    if (rows.length === 0) return res.status(404).json({ error: "Card not found" });
+
+    const current = rows[0];
+    const updated = updateSchedule(current, quality);
+
+    const { rows: updatedRows } = await pool.query(
+      `UPDATE cards
+       SET ease = $1, interval_days = $2, lapses = $3, due_at = $4, updated_at = NOW()
+       WHERE id = $5
+       RETURNING *`,
+      [updated.ease, updated.interval_days, updated.lapses, updated.due_at, req.params.id]
+    );
+
+    res.json({ data: updatedRows[0] });
+  } catch (error) {
+    console.error("Card review update error", error);
     res.status(500).json({ error: "Internal server error" });
   }
 });

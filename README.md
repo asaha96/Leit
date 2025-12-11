@@ -1,145 +1,67 @@
 # Leit - AI-Enhanced Flashcard Platform
 
-A modular, AI-enhanced flashcard platform with spaced repetition, smart answer evaluation, and Canvas LTI 1.3 integration capabilities.
+Spaced repetition flashcards with a local Express/Postgres backend, rich UI, Canvas per-user tokens, and dark/light theming.
 
-## Features
-
-- **Interactive Flashcard Sessions**: Type-to-answer with smart evaluation
-- **Spaced Repetition**: FSRS-inspired scheduling (Again/Hard/Good/Easy)
-- **Database Persistence**: Supabase-backed session logging and progress tracking
-- **CSV Import**: Quick deck creation from CSV files
-- **Modular Architecture**: Clean separation for future Canvas LTI 1.3 integration
-- **Progress Tracking**: Real-time session statistics and accuracy tracking
+## Feature Highlights
+- **Spaced repetition**: SM-2–style scheduling (Again/Hard/Good/Easy) per card (due_at, ease, interval, lapses).
+- **Study UX**: Pause/resume, exit to deck picker, keyboard shortcuts (Enter to reveal, 1–4 for quality).
+- **Due-only study**: Deck picker toggle to study only due/unscheduled cards.
+- **Practice/Q&A**: Generates questions from deck cards; records session events.
+- **Deck management**: CSV import, demo deck, tags, sources.
+- **Dashboard analytics**: Mastery %, due today, streak, total cards, weakest cards, card health (avg ease, lapses, due ≤7d, unscheduled).
+- **Canvas integration**: Per-user encrypted token storage and proxy; fetch courses/assignments. Token UI in Dashboard Canvas tab.
+- **Theming**: GT-inspired palette, dark mode toggle, brand logo/favicon.
 
 ## Tech Stack
+- Frontend: React + TypeScript + Vite, Tailwind + shadcn
+- Backend: Express + Postgres (local)
+- State/data: React Query
 
-- **Frontend**: React + TypeScript + Vite
-- **Database**: Supabase (Lovable Cloud)
-- **UI**: Tailwind CSS + shadcn/ui components
-- **Architecture**: Modular services for database, LTI, and session management
+## Quick Start (Local)
+1) Install deps
+```bash
+npm install
+```
+2) Postgres schema (runs once)
+```bash
+psql postgres://localhost/leit -f server/schema.sql
+```
+3) Env
+- Copy `env.local.sample` to `.env.local` (gitignored) and set:
+```
+DATABASE_URL=postgres://localhost:5432/leit
+JWT_SECRET=change-me
+VITE_CANVAS_API_KEY=            # optional; Canvas token now per-user
+```
+4) Run
+```bash
+npm run server:dev   # API on 3001
+npm run dev -- --host 127.0.0.1 --port 5177   # Vite
+```
+5) Sign up/sign in, create/import a deck, toggle “Due only,” and start a session.
 
-## Development Setup
-
-1. **Clone and Install**:
-   ```bash
-   git clone <repo-url>
-   cd leit
-   npm install
-   ```
-
-2. **Environment Configuration**:
-   - Copy `.env.example` to `.env`
-   - Lovable Cloud automatically configures Supabase variables
-   - Canvas LTI variables are placeholders for future implementation
-
-3. **Database Setup**:
-   - Database schema is automatically created via Supabase migration
-   - Includes tables: `decks`, `cards`, `users`, `sessions`, `session_events`
-   - Demo data is seeded automatically
-
-4. **Run Development Server**:
-   ```bash
-   npm run dev
-   ```
+## Canvas Token Notes
+- Set token in Dashboard → Canvas tab; stored encrypted per user.
+- Proxy calls go through `/api/canvas/*` with your token attached.
 
 ## Project Structure
-
 ```
 src/
-├── components/          # React UI components
-├── services/           # Business logic services
-│   ├── database.ts     # Supabase database operations
-│   ├── deckImporter.ts # CSV and CrowdAnki import
-│   ├── sessionManager.ts # Session state management
-│   └── lti/           # Canvas LTI 1.3 integration (stubs)
-│       ├── launch.ts   # OIDC launch handling
-│       ├── deeplink.ts # Content item creation
-│       └── ags.ts      # Assignment and Grade Services
-├── types/             # TypeScript type definitions
-├── utils/             # Utility functions
-└── pages/             # Route components
+  components/      # UI (Navigation, DeckPicker, FlashcardSession, etc.)
+  pages/           # Routes (Index, Dashboard, Practice, Auth)
+  services/        # API/data (database, canvas, session manager, deck importer)
+  types/           # Shared types (cards include due_at, ease, interval_days, lapses)
 ```
 
-## Usage
+## Key Commands
+- `npm run server:dev` — start Express API
+- `npm run dev -- --host 127.0.0.1 --port 5177` — start Vite
 
-### Quick Start
-1. Open the application
-2. Click "Quick Demo" to create a sample deck
-3. Start studying with interactive flashcards
-4. Use keyboard shortcuts: Enter (reveal), 1-4 (quality rating)
+## Data Model (core tables)
+- decks, cards (with due_at, ease, interval_days, lapses), sessions, session_events, users, canvas_tokens
 
-### CSV Import
-1. Click "Import CSV" on the deck picker
-2. Select a CSV file with columns: `front,back,hint,answers,tags`
-3. Multiple answers separated by `|`
-4. Tags separated by commas
-
-### Example CSV Format
-```csv
-front,back,hint,answers,tags
-What is the capital of France?,Paris,Starts with P,Paris|Paris France,geography europe
-What is 2 + 2?,4,Basic arithmetic,4|four,math basic
-```
-
-## API Integration
-
-### Session Flow
-1. **Start Session**: `SessionManager.startSession(deckId)`
-2. **Record Answers**: `SessionManager.recordAnswer(cardId, response, quality, expectedAnswers)`
-3. **Finish Session**: `SessionManager.finishSession()`
-
-### Database Operations
-- **Decks**: `DatabaseService.getDecks()`, `DatabaseService.createDeck()`
-- **Cards**: `DatabaseService.getCardsByDeck()`, `DatabaseService.createCards()`
-- **Sessions**: Session and event logging with automatic timestamps
-
-## Canvas LTI 1.3 Integration (Future)
-
-The platform is architected for Canvas LTI 1.3 integration:
-
-- **Launch**: OIDC authentication and context extraction
-- **Deep Linking**: Content item creation for Canvas modules
-- **AGS**: Grade passback for assessment scores
-- **Configuration**: Environment variables for Canvas API endpoints
-
-Canvas API integration uses the `CANVAS_API` secret (configured via Lovable Cloud).
-
-## Environment Variables
-
-```bash
-# Application
-PORT=3000
-NODE_ENV=development
-
-# Supabase (auto-configured by Lovable Cloud)
-VITE_SUPABASE_URL=<auto>
-VITE_SUPABASE_PUBLISHABLE_KEY=<auto>
-VITE_SUPABASE_PROJECT_ID=<auto>
-
-# Canvas LTI 1.3 (for future implementation)
-CANVAS_BASE_URL=<canvas-instance>
-CANVAS_CLIENT_ID=<lti-client-id>
-CANVAS_DEPLOYMENT_ID=<deployment-id>
-CANVAS_AUTH_URL=<oidc-auth-endpoint>
-CANVAS_TOKEN_URL=<token-endpoint>
-CANVAS_JWKS_URL=<jwks-endpoint>
-```
-
-## Deployment
-
-The application deploys automatically via Lovable Cloud with:
-- Supabase database and RLS policies
-- Environment variable management
-- Automatic SSL and domain management
-
-## Contributing
-
-1. Follow the modular architecture
-2. Add TypeScript types for all interfaces
-3. Use semantic tokens from the design system
-4. Test CSV import/export functionality
-5. Maintain Canvas LTI compatibility in service layer
+## Branding
+- Favicon and navbar logo use `public/logo.png`.
 
 ## License
-
-MIT License - see LICENSE file for details.
+MIT

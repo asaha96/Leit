@@ -30,8 +30,8 @@ const Index = () => {
   // Show loading screen
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="text-lg">Loading...</div>
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-muted/40">
+        <div className="text-lg text-foreground">Loading...</div>
       </div>
     );
   }
@@ -41,7 +41,7 @@ const Index = () => {
     return <AuthPage />;
   }
 
-  const handleDeckSelected = async (deckId: string) => {
+  const handleDeckSelected = async (deckId: string, options?: { dueOnly?: boolean }) => {
     setCurrentDeckId(deckId);
     
     try {
@@ -49,7 +49,9 @@ const Index = () => {
       await sessionManager.initialize();
       
       // Load cards for the deck
-      const cards = await DatabaseService.getDueCards(deckId);
+      const cards = options?.dueOnly
+        ? await DatabaseService.getDueCards(deckId)
+        : await DatabaseService.getCardsByDeck(deckId);
       if (cards.length === 0) {
         toast({
           title: "No Cards Available",
@@ -166,7 +168,7 @@ const Index = () => {
 
   const handleRestartSession = () => {
     if (currentDeckId) {
-      handleDeckSelected(currentDeckId);
+      handleDeckSelected(currentDeckId, { dueOnly: true });
     }
   };
 
@@ -181,24 +183,36 @@ const Index = () => {
     switch (activeTab) {
       case 'study':
         return (
-          <div className="min-h-screen bg-gradient-subtle">
+      <div className="min-h-screen bg-gradient-to-b from-background to-muted/40">
             {currentView === 'picker' && (
-              <DeckPicker onDeckSelected={handleDeckSelected} />
+          <div className="py-10">
+            <DeckPicker onDeckSelected={handleDeckSelected} />
+          </div>
             )}
             
             {currentView === 'session' && (
-              <FlashcardSession 
-                cards={currentCards}
-                onSessionComplete={handleSessionComplete}
-              />
+          <div className="py-10">
+            <FlashcardSession 
+              cards={currentCards}
+              onSessionComplete={handleSessionComplete}
+              onExit={() => {
+                setCurrentView('picker');
+                setCurrentDeckId(null);
+                setCurrentCards([]);
+                setSessionStats(null);
+              }}
+            />
+          </div>
             )}
             
             {currentView === 'complete' && sessionStats && (
-              <SessionComplete 
-                stats={sessionStats}
-                onRestart={handleRestartSession}
-                onFinish={handleFinishSession}
-              />
+          <div className="py-10">
+            <SessionComplete 
+              stats={sessionStats}
+              onRestart={handleRestartSession}
+              onFinish={handleFinishSession}
+            />
+          </div>
             )}
           </div>
         );

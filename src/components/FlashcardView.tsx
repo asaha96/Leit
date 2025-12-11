@@ -12,9 +12,10 @@ interface FlashcardViewProps {
   onAnswer: (response: string, quality: Quality) => void;
   cardNumber: number;
   totalCards: number;
+  disabled?: boolean;
 }
 
-export function FlashcardView({ card, onAnswer, cardNumber, totalCards }: FlashcardViewProps) {
+export function FlashcardView({ card, onAnswer, cardNumber, totalCards, disabled }: FlashcardViewProps) {
   const [userResponse, setUserResponse] = useState('');
   const [isRevealed, setIsRevealed] = useState(false);
   const [evaluation, setEvaluation] = useState<{ score: number; feedback: string; isCorrect: boolean } | null>(null);
@@ -36,6 +37,7 @@ export function FlashcardView({ card, onAnswer, cardNumber, totalCards }: Flashc
   }, [card.id]);
 
   const handleReveal = () => {
+    if (disabled) return;
     if (!userResponse.trim()) {
       setEvaluation({
         score: 0,
@@ -50,10 +52,12 @@ export function FlashcardView({ card, onAnswer, cardNumber, totalCards }: Flashc
   };
 
   const handleQualitySelect = (quality: Quality) => {
+    if (disabled) return;
     onAnswer(userResponse, quality);
   };
 
   const handleKeyPress = (event: React.KeyboardEvent) => {
+    if (disabled) return;
     if (event.key === 'Enter' && !isRevealed) {
       handleReveal();
     } else if (isRevealed) {
@@ -75,6 +79,7 @@ export function FlashcardView({ card, onAnswer, cardNumber, totalCards }: Flashc
   };
 
   const resetCard = () => {
+    if (disabled) return;
     setUserResponse('');
     setIsRevealed(false);
     setEvaluation(null);
@@ -85,7 +90,7 @@ export function FlashcardView({ card, onAnswer, cardNumber, totalCards }: Flashc
   return (
     <div className="space-y-6">
       {/* Card */}
-      <div className="bg-gradient-card border border-border rounded-xl p-8 shadow-card transition-smooth">
+      <div className="bg-card text-card-foreground border border-border rounded-xl p-8 shadow-card transition-smooth hover:bg-card/90">
         <div className="text-center space-y-6">
           {/* Card header */}
           <div className="flex items-center justify-between text-sm text-muted-foreground">
@@ -139,12 +144,14 @@ export function FlashcardView({ card, onAnswer, cardNumber, totalCards }: Flashc
                 placeholder="Type your answer..."
                 className="text-center text-lg py-3"
                 autoComplete="off"
+                disabled={disabled}
               />
               <Button 
                 onClick={handleReveal}
                 variant="reveal"
                 size="lg"
                 className="w-full"
+                disabled={disabled}
               >
                 <Eye className="w-4 h-4 mr-2" />
                 Reveal Answer (Enter)
@@ -173,9 +180,9 @@ export function FlashcardView({ card, onAnswer, cardNumber, totalCards }: Flashc
               </div>
 
               {/* Correct Answer */}
-              <div className="p-4 bg-primary/5 border border-primary/20 rounded-lg">
+              <div className="p-4 bg-muted border border-border rounded-lg">
                 <div className="text-sm text-muted-foreground mb-2">Correct Answer:</div>
-                <div className="text-xl font-semibold text-primary">
+                <div className="text-xl font-semibold text-foreground">
                   {card.back}
                 </div>
               </div>

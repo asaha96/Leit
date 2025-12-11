@@ -8,7 +8,7 @@ export function SessionProgress({ currentCard, totalCards, accuracy }: SessionPr
   const progressPercentage = (currentCard / totalCards) * 100;
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Progress Bar */}
       <div className="w-full bg-progress-bg rounded-full h-3 shadow-inner">
         <div 
