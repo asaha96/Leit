@@ -17,30 +17,12 @@ export class AIService {
   private static available: boolean | null = null;
 
   /**
-   * Check if AI service is available (returns false if not configured)
+   * Check if AI service is available
+   * Currently disabled - AI features are turned off
    */
   static async isAvailable(): Promise<boolean> {
-    if (this.available !== null) {
-      return this.available;
-    }
-
-    try {
-      const res = await fetch('/api/ai/status', {
-        method: 'GET',
-        headers: { 'Content-Type': 'application/json' }
-      });
-      if (!res.ok) {
-        this.available = false;
-        return false;
-      }
-      const data = await res.json();
-      this.available = data.available === true;
-      return this.available;
-    } catch {
-      // AI not available - this is fine, features will be hidden
-      this.available = false;
-      return false;
-    }
+    // AI features disabled for now - using hardcoded hints instead
+    return false;
   }
 
   /**
