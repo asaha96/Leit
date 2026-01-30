@@ -32,7 +32,8 @@ export const apiFetch = async (path: string, options: RequestInit = {}) => {
 
   const apiBase = getApiBase();
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), 15000);
+  // 45s so serverless cold starts (Vercel) have time to complete
+  const timeoutId = setTimeout(() => controller.abort(), 45000);
   try {
     const res = await fetch(`${apiBase}${path}`, {
       ...options,

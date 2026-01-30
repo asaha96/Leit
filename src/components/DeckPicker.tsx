@@ -80,26 +80,63 @@ export function DeckPicker({ onDeckSelected }: DeckPickerProps) {
   const handleQuickDemo = async () => {
     setImporting(true);
     try {
-      const demoCSV = [
-        { front: 'What is the capital of France?', back: 'Paris', answers: 'Paris|Paris, France', hint: 'Starts with P' },
-        { front: 'What is 2 + 2?', back: '4', answers: '4|four', hint: 'Basic arithmetic' },
-        { front: 'What is the largest planet?', back: 'Jupiter', answers: 'Jupiter', hint: 'Gas giant' },
-        { front: 'Who wrote Romeo and Juliet?', back: 'William Shakespeare', answers: 'Shakespeare|William Shakespeare', hint: 'English playwright' },
-        { front: 'What is the chemical symbol for gold?', back: 'Au', answers: 'Au|Gold', hint: 'From Latin aurum' }
+      // World Capitals deck
+      const capitalsData = [
+        { front: 'What is the capital of France?', back: 'Paris', answers: 'Paris', hint: 'City of Light, home of the Eiffel Tower' },
+        { front: 'What is the capital of Japan?', back: 'Tokyo', answers: 'Tokyo', hint: 'Largest city in the world by population' },
+        { front: 'What is the capital of Australia?', back: 'Canberra', answers: 'Canberra', hint: 'Not Sydney or Melbourne!' },
+        { front: 'What is the capital of Brazil?', back: 'Brasília', answers: 'Brasilia|Brasília', hint: 'Planned city built in the 1960s' },
+        { front: 'What is the capital of Canada?', back: 'Ottawa', answers: 'Ottawa', hint: 'Located in Ontario, not Toronto' },
+        { front: 'What is the capital of Egypt?', back: 'Cairo', answers: 'Cairo', hint: 'Near the Pyramids of Giza' },
+        { front: 'What is the capital of Germany?', back: 'Berlin', answers: 'Berlin', hint: 'Reunified after the Cold War' },
+        { front: 'What is the capital of India?', back: 'New Delhi', answers: 'New Delhi|Delhi', hint: 'Not Mumbai or Kolkata' },
+        { front: 'What is the capital of Italy?', back: 'Rome', answers: 'Rome|Roma', hint: 'The Eternal City' },
+        { front: 'What is the capital of South Korea?', back: 'Seoul', answers: 'Seoul', hint: 'K-pop capital of the world' },
       ];
 
-      const result = await DeckImporter.importFromCSV('Demo Deck', demoCSV, 'quick-demo');
-      
-      if (result.deck) {
-        await loadDecks();
-        onDeckSelected(result.deck.id, { dueOnly });
-        onDeckSelected(result.deck.id, { dueOnly });
+      // Science & Nature deck
+      const scienceData = [
+        { front: 'What is the chemical symbol for water?', back: 'H₂O', answers: 'H2O|H₂O', hint: 'Two hydrogen, one oxygen' },
+        { front: 'What is the largest planet in our solar system?', back: 'Jupiter', answers: 'Jupiter', hint: 'Named after the Roman king of gods' },
+        { front: 'What is the powerhouse of the cell?', back: 'Mitochondria', answers: 'Mitochondria|mitochondrion', hint: 'Produces ATP energy' },
+        { front: 'What is the speed of light (approx)?', back: '300,000 km/s', answers: '300000|299792|3x10^8|300,000 km/s', hint: 'About 186,000 miles per second' },
+        { front: 'What is the chemical symbol for gold?', back: 'Au', answers: 'Au', hint: 'From Latin "aurum"' },
+        { front: 'How many bones are in the adult human body?', back: '206', answers: '206', hint: 'Babies have more, around 270' },
+        { front: 'What is the closest star to Earth?', back: 'The Sun', answers: 'Sun|The Sun', hint: "It's really obvious!" },
+        { front: 'What gas do plants absorb from the atmosphere?', back: 'Carbon dioxide', answers: 'CO2|Carbon dioxide|carbon dioxide', hint: 'They release oxygen' },
+      ];
+
+      // Programming Basics deck
+      const programmingData = [
+        { front: 'What does HTML stand for?', back: 'HyperText Markup Language', answers: 'HyperText Markup Language|Hypertext Markup Language', hint: 'Used to structure web pages' },
+        { front: 'What does CSS stand for?', back: 'Cascading Style Sheets', answers: 'Cascading Style Sheets', hint: 'Used to style web pages' },
+        { front: 'What symbol is used for comments in JavaScript?', back: '// or /* */', answers: '//|/* */|// or /* */', hint: 'Single line uses two characters' },
+        { front: 'What is a variable?', back: 'A container for storing data values', answers: 'container|storage|stores data|data value', hint: 'Like a labeled box' },
+        { front: 'What does API stand for?', back: 'Application Programming Interface', answers: 'Application Programming Interface', hint: 'How software components communicate' },
+        { front: 'What is a function in programming?', back: 'A reusable block of code', answers: 'reusable|block of code|subroutine', hint: 'Call it by name to execute' },
+        { front: 'What is the difference between == and === in JavaScript?', back: '== compares values, === compares values and types', answers: 'type|strict|value and type', hint: 'One is "strict" equality' },
+        { front: 'What is an array?', back: 'An ordered collection of items', answers: 'collection|list|ordered|items', hint: 'Like a numbered list' },
+      ];
+
+      // Create all three decks
+      const result1 = await DeckImporter.importFromCSV('🌍 World Capitals', capitalsData, 'demo');
+      const result2 = await DeckImporter.importFromCSV('🔬 Science & Nature', scienceData, 'demo');
+      const result3 = await DeckImporter.importFromCSV('💻 Programming Basics', programmingData, 'demo');
+
+      await loadDecks();
+
+      if (result1.deck) {
+        onDeckSelected(result1.deck.id, { dueOnly });
+      } else if (result2.deck) {
+        onDeckSelected(result2.deck.id, { dueOnly });
+      } else if (result3.deck) {
+        onDeckSelected(result3.deck.id, { dueOnly });
       } else {
-        alert('Failed to create demo deck');
+        alert('Failed to create demo decks');
       }
     } catch (error) {
       console.error('Demo deck creation error:', error);
-      alert('Failed to create demo deck');
+      alert('Failed to create demo deck. Please try again.');
     } finally {
       setImporting(false);
     }
