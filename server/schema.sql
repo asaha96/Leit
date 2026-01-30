@@ -1,15 +1,19 @@
 -- Enable UUID generation (Postgres >=13 can use gen_random_uuid via pgcrypto)
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
--- Users table
+-- Users table (Clerk handles auth, we store external_sub for linking)
 CREATE TABLE IF NOT EXISTS users (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  email TEXT UNIQUE NOT NULL,
+  external_sub TEXT UNIQUE,  -- Clerk user ID
+  email TEXT,
   display_name TEXT,
-  password_hash TEXT NOT NULL,
+  password_hash TEXT,  -- Deprecated: kept for backwards compatibility
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Index for Clerk user lookups
+CREATE INDEX IF NOT EXISTS idx_users_external_sub ON users(external_sub);
 
 -- Decks table
 CREATE TABLE IF NOT EXISTS decks (
@@ -66,4 +70,3 @@ CREATE TABLE IF NOT EXISTS session_events (
   next_due TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-

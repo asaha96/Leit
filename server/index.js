@@ -5,8 +5,7 @@ import path from "path";
 import crypto from "crypto";
 import dayjs from "dayjs";
 import { Pool } from "pg";
-import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
+import { clerkClient, clerkMiddleware, getAuth } from "@clerk/express";
 
 // Load env from .env, then .env.local (override), with a safe default
 dotenv.config();
@@ -14,8 +13,7 @@ dotenv.config({ path: path.resolve(process.cwd(), ".env.local"), override: true 
 
 const app = express();
 const port = process.env.PORT || 3001;
-const jwtSecret = process.env.JWT_SECRET || "dev-secret-change-me";
-const canvasTokenSecret = process.env.CANVAS_TOKEN_SECRET || jwtSecret;
+const canvasTokenSecret = process.env.CANVAS_TOKEN_SECRET || "dev-secret-change-me";
 const canvasApiBase = "https://canvas.instructure.com/api/v1";
 
 const pool = new Pool({
@@ -52,6 +50,7 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
+app.use(clerkMiddleware());
 
 const deriveKey = (secret) => crypto.createHash("sha256").update(secret).digest();
 
@@ -72,20 +71,37 @@ const decryptToken = (iv, tag, encrypted) => {
   return decrypted.toString("utf8");
 };
 
-const generateToken = (userId) =>
-  jwt.sign({ userId }, jwtSecret, { expiresIn: "7d" });
-
-const authMiddleware = (req, res, next) => {
-  const header = req.headers.authorization;
-  if (!header?.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Unauthorized" });
-  }
-  const token = header.substring("Bearer ".length);
+// Auth middleware using Clerk - verifies token and syncs user to database
+const authMiddleware = async (req, res, next) => {
   try {
-    const payload = jwt.verify(token, jwtSecret);
-    req.userId = payload.userId;
+    const auth = getAuth(req);
+
+    if (!auth.userId) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+
+    // Get user info from Clerk
+    const clerkUser = await clerkClient.users.getUser(auth.userId);
+    const email = clerkUser.emailAddresses?.[0]?.emailAddress;
+    const displayName = clerkUser.fullName || clerkUser.firstName || email;
+
+    // Upsert user into database (sync Clerk user with local DB)
+    const { rows } = await pool.query(
+      `INSERT INTO users (external_sub, email, display_name)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (external_sub) DO UPDATE SET
+         email = COALESCE(EXCLUDED.email, users.email),
+         display_name = COALESCE(EXCLUDED.display_name, users.display_name),
+         updated_at = NOW()
+       RETURNING id`,
+      [auth.userId, email, displayName]
+    );
+
+    req.userId = rows[0].id;
+    req.clerkUserId = auth.userId;
     next();
   } catch (err) {
+    console.error("Auth middleware error:", err);
     return res.status(401).json({ error: "Invalid token" });
   }
 };
@@ -95,73 +111,11 @@ app.get("/health", (_req, res) => {
 });
 
 // --- Auth ---
-app.post("/api/auth/signup", async (req, res) => {
-  const { email, password, displayName } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email and password are required" });
-  }
-
-  try {
-    const existing = await pool.query(
-      "SELECT id FROM users WHERE email = $1",
-      [email.toLowerCase()]
-    );
-    if (existing.rows.length > 0) {
-      return res.status(409).json({ error: "Email already registered" });
-    }
-
-    const passwordHash = await bcrypt.hash(password, 10);
-    const { rows } = await pool.query(
-      `INSERT INTO users (email, display_name, password_hash)
-       VALUES ($1, $2, $3)
-       RETURNING id, email, display_name, created_at, updated_at`,
-      [email.toLowerCase(), displayName || null, passwordHash]
-    );
-
-    const user = rows[0];
-    const token = generateToken(user.id);
-    res.json({ token, user });
-  } catch (error) {
-    console.error("Signup error", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-app.post("/api/auth/signin", async (req, res) => {
-  const { email, password } = req.body;
-  if (!email || !password) {
-    return res.status(400).json({ error: "Email and password are required" });
-  }
-
-  try {
-    const { rows } = await pool.query(
-      "SELECT id, email, display_name, password_hash, created_at, updated_at FROM users WHERE email = $1",
-      [email.toLowerCase()]
-    );
-
-    const user = rows[0];
-    if (!user) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
-
-    const ok = await bcrypt.compare(password, user.password_hash);
-    if (!ok) {
-      return res.status(401).json({ error: "Invalid credentials" });
-    }
-
-    delete user.password_hash;
-    const token = generateToken(user.id);
-    res.json({ token, user });
-  } catch (error) {
-    console.error("Signin error", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
+// Clerk handles signup/signin - we just need an endpoint to get current user info
 app.get("/api/auth/me", authMiddleware, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      "SELECT id, email, display_name, created_at, updated_at FROM users WHERE id = $1",
+      "SELECT id, email, external_sub, display_name, created_at, updated_at FROM users WHERE id = $1",
       [req.userId]
     );
     const user = rows[0];

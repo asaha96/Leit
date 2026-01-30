@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
-import { useAuth } from '@/hooks/useAuth';
+import { UserButton } from '@clerk/clerk-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { BookOpen, BarChart3, GraduationCap, LogOut } from 'lucide-react';
+import { BookOpen, BarChart3, GraduationCap } from 'lucide-react';
 import logo from '/logo.png';
 
 interface NavigationProps {
@@ -10,8 +10,6 @@ interface NavigationProps {
 }
 
 export const Navigation = ({ activeTab, onTabChange }: NavigationProps) => {
-  const { signOut, dbUser } = useAuth();
-
   const navItems = [
     { id: 'study', label: 'Study', icon: BookOpen },
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
@@ -52,19 +50,17 @@ export const Navigation = ({ activeTab, onTabChange }: NavigationProps) => {
 
           {/* User actions */}
           <div className="flex items-center gap-2 md:gap-4 flex-shrink-0">
-            <span className="hidden lg:inline text-sm text-muted-foreground truncate max-w-32">
-              {dbUser?.display_name || dbUser?.email || 'User'}
-            </span>
             <ThemeToggle />
-            <Button
-              variant="outline"
-              onClick={signOut}
-              className="tap-target px-3 md:px-4"
-              aria-label="Log out"
-            >
-              <LogOut className="h-4 w-4 md:mr-2" aria-hidden="true" />
-              <span className="hidden md:inline">Logout</span>
-            </Button>
+            <UserButton
+              afterSignOutUrl="/"
+              appearance={{
+                elements: {
+                  avatarBox: "w-9 h-9",
+                  userButtonPopoverCard: "shadow-lg border border-border",
+                  userButtonPopoverActionButton: "hover:bg-accent",
+                }
+              }}
+            />
           </div>
         </div>
       </div>

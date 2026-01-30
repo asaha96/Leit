@@ -1,121 +1,51 @@
-import { createContext, useContext, useEffect, useState } from 'react';
-import { useToast } from '@/hooks/use-toast';
+import { useEffect } from 'react';
+import { useUser, useAuth as useClerkAuth, useClerk } from '@clerk/clerk-react';
 import type { User as DatabaseUser } from '@/types/database';
-import { apiFetch, getAuthToken, setAuthToken, clearAuthToken } from '@/lib/api';
+import { setTokenGetter } from '@/lib/api';
 
 interface AuthContextType {
   user: DatabaseUser | null;
   dbUser: DatabaseUser | null;
   loading: boolean;
-  signUp: (email: string, password: string, displayName?: string) => Promise<{ error: any }>;
-  signIn: (email: string, password: string) => Promise<{ error: any }>;
   signOut: () => Promise<void>;
+  getToken: () => Promise<string | null>;
 }
 
-const AuthContext = createContext<AuthContextType>({
-  user: null,
-  dbUser: null,
-  loading: true,
-  signUp: async () => ({ error: null }),
-  signIn: async () => ({ error: null }),
-  signOut: async () => {},
-});
+export const useAuth = (): AuthContextType => {
+  const { user, isLoaded } = useUser();
+  const { getToken } = useClerkAuth();
+  const { signOut: clerkSignOut } = useClerk();
 
-export const useAuth = () => {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error('useAuth must be used within AuthProvider');
-  }
-  return context;
-};
-
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
-  const [user, setUser] = useState<DatabaseUser | null>(null);
-  const [dbUser, setDbUser] = useState<DatabaseUser | null>(null);
-  const [loading, setLoading] = useState(true);
-  const { toast } = useToast();
-
+  // Set the token getter for API calls
   useEffect(() => {
-    const token = getAuthToken();
-    if (!token) {
-      setLoading(false);
-      return;
-    }
+    setTokenGetter(getToken);
+  }, [getToken]);
 
-    apiFetch("/auth/me")
-      .then((res) => {
-        setUser(res.user);
-        setDbUser(res.user);
-      })
-      .catch((err) => {
-        console.error("Auth me error", err);
-        clearAuthToken();
-        setUser(null);
-        setDbUser(null);
-      })
-      .finally(() => setLoading(false));
-  }, []);
-
-  const signUp = async (email: string, password: string, displayName?: string) => {
-    try {
-      const res = await apiFetch("/auth/signup", {
-        method: "POST",
-        body: JSON.stringify({ email, password, displayName }),
-      });
-      setAuthToken(res.token);
-      setUser(res.user);
-      setDbUser(res.user);
-      toast({
-        title: "Account created!",
-        description: "You are now signed in.",
-      });
-      return { error: null };
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Sign up failed",
-        description: error?.message || "Unable to sign up",
-      });
-      return { error };
-    }
-  };
-
-  const signIn = async (email: string, password: string) => {
-    try {
-      const res = await apiFetch("/auth/signin", {
-        method: "POST",
-        body: JSON.stringify({ email, password }),
-      });
-      setAuthToken(res.token);
-      setUser(res.user);
-      setDbUser(res.user);
-      return { error: null };
-    } catch (error: any) {
-      toast({
-        variant: "destructive",
-        title: "Sign in failed",
-        description: error?.message || "Unable to sign in",
-      });
-      return { error };
-    }
-  };
+  // Convert Clerk user to DatabaseUser format
+  const dbUser: DatabaseUser | null = user ? {
+    id: user.id,
+    email: user.primaryEmailAddress?.emailAddress,
+    external_sub: user.id,
+    display_name: user.fullName || user.firstName || undefined,
+    created_at: user.createdAt?.toISOString() || new Date().toISOString(),
+    updated_at: user.updatedAt?.toISOString() || new Date().toISOString(),
+  } : null;
 
   const signOut = async () => {
-    clearAuthToken();
-    setUser(null);
-    setDbUser(null);
+    await clerkSignOut();
   };
 
-  return (
-    <AuthContext.Provider value={{
-      user,
-      dbUser,
-      loading,
-      signUp,
-      signIn,
-      signOut
-    }}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return {
+    user: dbUser,
+    dbUser,
+    loading: !isLoaded,
+    signOut,
+    getToken,
+  };
+};
+
+// AuthProvider is no longer needed with Clerk - ClerkProvider handles it
+// Keep this export for backwards compatibility but it just passes through children
+export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+  return <>{children}</>;
 };

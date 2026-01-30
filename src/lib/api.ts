@@ -1,5 +1,3 @@
-const TOKEN_KEY = "auth_token";
-
 // API origin: use VITE_API_ORIGIN in production, relative /api in dev (Vite proxy)
 const getApiBase = () => {
   const origin = import.meta.env.VITE_API_ORIGIN;
@@ -11,30 +9,25 @@ const getApiBase = () => {
   return "/api";
 };
 
-export const getAuthToken = () => {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(TOKEN_KEY);
-};
+// Token getter function - will be set by the auth hook
+let tokenGetter: (() => Promise<string | null>) | null = null;
 
-export const setAuthToken = (token: string) => {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(TOKEN_KEY, token);
-};
-
-export const clearAuthToken = () => {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(TOKEN_KEY);
+export const setTokenGetter = (getter: () => Promise<string | null>) => {
+  tokenGetter = getter;
 };
 
 export const apiFetch = async (path: string, options: RequestInit = {}) => {
-  const token = getAuthToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string> | undefined),
   };
 
-  if (token) {
-    headers.Authorization = `Bearer ${token}`;
+  // Get token from Clerk
+  if (tokenGetter) {
+    const token = await tokenGetter();
+    if (token) {
+      headers.Authorization = `Bearer ${token}`;
+    }
   }
 
   const apiBase = getApiBase();
@@ -56,4 +49,3 @@ export const apiFetch = async (path: string, options: RequestInit = {}) => {
     return {};
   }
 };
-
