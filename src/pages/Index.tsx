@@ -12,14 +12,17 @@ import { SessionComplete } from '@/components/SessionComplete';
 import { useToast } from '@/hooks/use-toast';
 import type { Card as FlashCard, SessionStats, SessionEntry } from '@/types/flashcard';
 
+const AUTH_LOADING_TIMEOUT_MS = 10000;
+
 const Index = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const [activeTab, setActiveTab] = useState('study');
   const [currentView, setCurrentView] = useState<'picker' | 'session' | 'complete'>('picker');
   const [currentDeckId, setCurrentDeckId] = useState<string | null>(null);
   const [currentCards, setCurrentCards] = useState<FlashCard[]>([]);
   const [sessionStats, setSessionStats] = useState<SessionStats | null>(null);
   const [sessionManager] = useState(() => new SessionManager());
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const { toast } = useToast();
 
   // All hooks must be called before any early returns
@@ -27,14 +30,42 @@ const Index = () => {
     sessionManager.initialize();
   }, [sessionManager]);
 
+  // If Clerk loading takes too long, show fallback so user isn't stuck
+  useEffect(() => {
+    if (!loading) {
+      setLoadingTimedOut(false);
+      return;
+    }
+    const t = setTimeout(() => setLoadingTimedOut(true), AUTH_LOADING_TIMEOUT_MS);
+    return () => clearTimeout(t);
+  }, [loading]);
+
   // Show loading screen
   if (loading) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-background to-muted/40 gap-4">
-        <div className="animate-pulse">
-          <div className="h-12 w-12 bg-primary/20 rounded-lg" />
-        </div>
-        <div className="text-lg text-muted-foreground">Loading Leit...</div>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-background to-muted/40 gap-4 px-4">
+        {!loadingTimedOut ? (
+          <>
+            <div className="animate-pulse">
+              <div className="h-12 w-12 bg-primary/20 rounded-lg" />
+            </div>
+            <div className="text-lg text-muted-foreground">Loading Leit...</div>
+          </>
+        ) : (
+          <>
+            <div className="text-lg font-medium text-foreground">Taking longer than usual</div>
+            <p className="text-sm text-muted-foreground text-center max-w-sm">
+              Try refreshing the page. If it still doesn’t load, sign out and sign in again.
+            </p>
+            <button
+              type="button"
+              onClick={() => signOut().then(() => window.location.reload())}
+              className="text-sm text-primary hover:underline"
+            >
+              Sign out and reload
+            </button>
+          </>
+        )}
       </div>
     );
   }

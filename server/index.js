@@ -47,13 +47,20 @@ ensureCanvasTable().catch((err) => {
   console.error("Failed to ensure canvas_tokens table", err);
 });
 
+// Allow localhost and Vercel/preview origins (same-origin requests have no origin in some cases)
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+const vercelUrl = process.env.VERCEL_URL; // e.g. "leit-xxx.vercel.app"
+if (vercelUrl) {
+  allowedOrigins.push(`https://${vercelUrl}`, `https://www.${vercelUrl}`);
+}
 app.use(cors({
   origin: (origin, callback) => {
-    // Allow local dev on any port for localhost / 127.0.0.1
     if (!origin) return callback(null, true);
-    const allowed =
-      /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin);
-    if (allowed) return callback(null, true);
+    if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return callback(null, true);
+    if (allowedOrigins.some((o) => origin === o || origin?.endsWith(".vercel.app"))) return callback(null, true);
     return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,

@@ -31,21 +31,28 @@ export const apiFetch = async (path: string, options: RequestInit = {}) => {
   }
 
   const apiBase = getApiBase();
-  const res = await fetch(`${apiBase}${path}`, {
-    ...options,
-    headers,
-  });
-
-  if (!res.ok) {
-    const message = await res.text();
-    throw new Error(message || `Request failed: ${res.status}`);
-  }
-
-  const text = await res.text();
-  if (!text) return {};
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 15000);
   try {
-    return JSON.parse(text);
-  } catch (err) {
-    return {};
+    const res = await fetch(`${apiBase}${path}`, {
+      ...options,
+      headers,
+      signal: options.signal ?? controller.signal,
+    });
+    clearTimeout(timeoutId);
+    if (!res.ok) {
+      const message = await res.text();
+      throw new Error(message || `Request failed: ${res.status}`);
+    }
+    const text = await res.text();
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch (err) {
+      return {};
+    }
+  } catch (e) {
+    clearTimeout(timeoutId);
+    throw e;
   }
 };

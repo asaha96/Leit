@@ -23,9 +23,19 @@ export function DeckPicker({ onDeckSelected }: DeckPickerProps) {
 
   const loadDecks = async () => {
     setLoading(true);
-    const deckList = await DatabaseService.getDecks();
-    setDecks(deckList);
-    setLoading(false);
+    try {
+      // Timeout so we don't hang forever if API/token is slow (e.g. cold start, Clerk)
+      const deckList = await Promise.race([
+        DatabaseService.getDecks(),
+        new Promise<Deck[]>((resolve) => setTimeout(() => resolve([]), 12000)),
+      ]);
+      setDecks(deckList);
+    } catch (e) {
+      console.error("Load decks error:", e);
+      setDecks([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleCSVImport = async () => {
