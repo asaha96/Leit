@@ -31,18 +31,18 @@ if (!databaseUrl && process.env.NODE_ENV === "production") {
   process.exit(1);
 }
 
+// Determine if SSL is needed (any remote database, not localhost)
+const isRemoteDatabase = databaseUrl && !databaseUrl.includes("localhost") && !databaseUrl.includes("127.0.0.1");
+
 // Serverless-friendly pool configuration
-// For Supabase/cloud databases: use explicit SSL config to handle certificate verification
 const pool = new Pool({
   connectionString: databaseUrl || "postgres://localhost:5432/leit",
   // Serverless: use fewer connections and shorter timeouts
   max: process.env.VERCEL ? 3 : 10,
   idleTimeoutMillis: process.env.VERCEL ? 10000 : 30000,
   connectionTimeoutMillis: 10000,
-  // SSL: required for Supabase, disable strict cert verification for pooler connections
-  ssl: databaseUrl?.includes("supabase") || process.env.NODE_ENV === "production"
-    ? { rejectUnauthorized: false }
-    : false,
+  // SSL: required for any remote database, disable strict cert verification for cloud providers
+  ssl: isRemoteDatabase ? { rejectUnauthorized: false } : false,
 });
 
 // Ensure storage for per-user Canvas tokens (encrypted)
