@@ -25,8 +25,13 @@ if (!databaseUrl && process.env.NODE_ENV === "production") {
   process.exit(1);
 }
 
+// Serverless-friendly pool configuration
 const pool = new Pool({
   connectionString: databaseUrl || "postgres://localhost:5432/leit",
+  // Serverless: use fewer connections and shorter timeouts
+  max: process.env.VERCEL ? 3 : 10,
+  idleTimeoutMillis: process.env.VERCEL ? 10000 : 30000,
+  connectionTimeoutMillis: 10000,
 });
 
 // Ensure storage for per-user Canvas tokens (encrypted)
@@ -43,24 +48,25 @@ const ensureCanvasTable = async () => {
   `);
 };
 
-ensureCanvasTable().catch((err) => {
-  console.error("Failed to ensure canvas_tokens table", err);
-});
-
-// Allow localhost and Vercel/preview origins (same-origin requests have no origin in some cases)
-const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
-  .split(",")
-  .map((o) => o.trim())
-  .filter(Boolean);
-const vercelUrl = process.env.VERCEL_URL; // e.g. "leit-xxx.vercel.app"
-if (vercelUrl) {
-  allowedOrigins.push(`https://${vercelUrl}`, `https://www.${vercelUrl}`);
+// Only run table creation on standalone server (not serverless - run migrations separately)
+if (!process.env.VERCEL) {
+  ensureCanvasTable().catch((err) => {
+    console.error("Failed to ensure canvas_tokens table", err);
+  });
 }
+
+// Allow localhost and Vercel origins (same-origin requests have no origin)
 app.use(cors({
   origin: (origin, callback) => {
+    // No origin = same-origin request (Vercel serverless)
     if (!origin) return callback(null, true);
+    // Localhost for development
     if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return callback(null, true);
-    if (allowedOrigins.some((o) => origin === o || origin?.endsWith(".vercel.app"))) return callback(null, true);
+    // All Vercel preview and production URLs
+    if (origin?.endsWith(".vercel.app")) return callback(null, true);
+    // Custom allowed origins from env
+    const allowedOrigins = (process.env.ALLOWED_ORIGINS || "").split(",").map((o) => o.trim()).filter(Boolean);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
     return callback(new Error("Not allowed by CORS"));
   },
   credentials: true,
@@ -299,21 +305,6 @@ app.post("/api/cards/:id/review", authMiddleware, async (req, res) => {
     res.status(500).json({ error: "Internal server error" });
   }
 });
-
-// Attach userId if token provided; useful for optional auth
-const optionalAuth = (req, _res, next) => {
-  const header = req.headers.authorization;
-  if (header?.startsWith("Bearer ")) {
-    const token = header.substring("Bearer ".length);
-    try {
-      const payload = jwt.verify(token, jwtSecret);
-      req.userId = payload.userId;
-    } catch (e) {
-      // ignore invalid token
-    }
-  }
-  next();
-};
 
 // --- Decks ---
 app.get("/api/decks", authMiddleware, async (req, res) => {
