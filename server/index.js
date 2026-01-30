@@ -7,17 +7,26 @@ import dayjs from "dayjs";
 import { Pool } from "pg";
 import { clerkClient, clerkMiddleware, getAuth } from "@clerk/express";
 
-// Load env from .env, then .env.local (override), with a safe default
-dotenv.config();
-dotenv.config({ path: path.resolve(process.cwd(), ".env.local"), override: true });
+// Only load .env files in development (Railway/Vercel set env vars directly)
+if (process.env.NODE_ENV !== "production") {
+  dotenv.config();
+  dotenv.config({ path: path.resolve(process.cwd(), ".env.local"), override: true });
+}
 
 const app = express();
 const port = process.env.PORT || 3001;
 const canvasTokenSecret = process.env.CANVAS_TOKEN_SECRET || "dev-secret-change-me";
 const canvasApiBase = "https://canvas.instructure.com/api/v1";
 
+// Database connection - require DATABASE_URL in production
+const databaseUrl = process.env.DATABASE_URL;
+if (!databaseUrl && process.env.NODE_ENV === "production") {
+  console.error("ERROR: DATABASE_URL environment variable is required in production");
+  process.exit(1);
+}
+
 const pool = new Pool({
-  connectionString: process.env.DATABASE_URL || "postgres://localhost:5432/leit",
+  connectionString: databaseUrl || "postgres://localhost:5432/leit",
 });
 
 // Ensure storage for per-user Canvas tokens (encrypted)
