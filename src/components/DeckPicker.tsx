@@ -133,10 +133,10 @@ export function DeckPicker({ onDeckSelected }: DeckPickerProps) {
 
   return (
     <div className="container max-w-5xl mx-auto p-6 space-y-8">
-      <div className="text-center space-y-2">
-        <p className="text-sm uppercase tracking-wide text-muted-foreground">Study</p>
-        <h1 className="text-4xl font-bold text-primary">Leit Flashcards</h1>
-        <p className="text-muted-foreground text-sm">Choose a deck to start your session</p>
+      <div className="text-center space-y-3 animate-fade-in-down">
+        <p className="text-sm uppercase tracking-widest text-muted-foreground font-medium">Study</p>
+        <h1 className="text-4xl md:text-5xl font-bold text-primary">Leit Flashcards</h1>
+        <p className="text-muted-foreground">Choose a deck to start your learning session</p>
       </div>
 
       <Card className="bg-card text-card-foreground border-border shadow-card">
@@ -177,21 +177,22 @@ export function DeckPicker({ onDeckSelected }: DeckPickerProps) {
       </Card>
 
       {decks.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3" role="list" aria-label="Available decks">
-          {decks.map((deck) => (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 stagger-children" role="list" aria-label="Available decks">
+          {decks.map((deck, index) => (
             <Card
               key={deck.id}
-              className="cursor-pointer transition-all hover:shadow-lg hover:scale-[1.01] border-border bg-card text-card-foreground hover:bg-card/90 focus-within:ring-2 focus-within:ring-ring"
+              className="cursor-pointer transition-all duration-300 hover:shadow-xl hover:scale-[1.02] hover:-translate-y-1 border-border bg-card text-card-foreground hover:border-primary/30 focus-within:ring-2 focus-within:ring-ring group"
               onClick={() => onDeckSelected(deck.id, { dueOnly })}
               role="listitem"
+              style={{ animationDelay: `${index * 50}ms` }}
             >
               <button
                 className="w-full text-left focus:outline-none"
                 aria-label={`Study ${deck.title} deck`}
               >
                 <CardHeader className="flex flex-row items-start justify-between space-y-0">
-                  <CardTitle className="text-primary">{deck.title}</CardTitle>
-                  <Play className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                  <CardTitle className="text-primary group-hover:text-primary/80 transition-colors">{deck.title}</CardTitle>
+                  <Play className="h-5 w-5 text-muted-foreground group-hover:text-primary group-hover:scale-110 transition-all" aria-hidden="true" />
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2">
@@ -200,7 +201,7 @@ export function DeckPicker({ onDeckSelected }: DeckPickerProps) {
                         {deck.tags.map((tag) => (
                           <span
                             key={tag}
-                            className="px-2 py-1 bg-accent text-accent-foreground text-xs rounded-full"
+                            className="px-2 py-1 bg-accent text-accent-foreground text-xs rounded-full transition-colors group-hover:bg-primary/10"
                           >
                             {tag}
                           </span>

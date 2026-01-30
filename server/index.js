@@ -645,7 +645,7 @@ app.post("/api/ai/chat", authMiddleware, async (req, res) => {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "api-key": deepseekApiKey,
+        "Authorization": `Bearer ${deepseekApiKey}`,
       },
       body: JSON.stringify({
         model: deepseekDeployment,

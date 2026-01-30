@@ -88,13 +88,13 @@ export function FlashcardView({ card, onAnswer, cardNumber, totalCards, disabled
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-fade-in">
       {/* Card */}
-      <div className="bg-card text-card-foreground border border-border rounded-xl p-8 shadow-card transition-smooth hover:bg-card/90">
+      <div className="bg-card text-card-foreground border border-border rounded-xl p-8 shadow-card transition-all duration-300 hover:shadow-lg hover:border-primary/20">
         <div className="text-center space-y-6">
           {/* Card header */}
-          <div className="flex items-center justify-between text-sm text-muted-foreground">
-            <span>Card {cardNumber} of {totalCards}</span>
+          <div className="flex items-center justify-between text-sm text-muted-foreground animate-fade-in-down">
+            <span className="font-medium">Card {cardNumber} of {totalCards}</span>
             {card.tags.length > 0 && (
               <div className="flex gap-1">
                 {card.tags.map(tag => (
@@ -107,11 +107,11 @@ export function FlashcardView({ card, onAnswer, cardNumber, totalCards, disabled
           </div>
 
           {/* Question */}
-          <div className="space-y-4">
-            <h2 className="text-2xl font-semibold text-foreground leading-relaxed">
+          <div className="space-y-4 animate-scale-in">
+            <h2 className="text-2xl md:text-3xl font-semibold text-foreground leading-relaxed">
               {card.front}
             </h2>
-            
+
             {/* Hint */}
             {card.hint && (
               <div className="space-y-2">
@@ -119,13 +119,13 @@ export function FlashcardView({ card, onAnswer, cardNumber, totalCards, disabled
                   variant="ghost"
                   size="sm"
                   onClick={() => setShowHint(!showHint)}
-                  className="text-muted-foreground"
+                  className="text-muted-foreground hover:text-primary transition-colors"
                 >
-                  <Lightbulb className="w-4 h-4 mr-2" />
+                  <Lightbulb className={`w-4 h-4 mr-2 transition-colors ${showHint ? 'text-amber-500' : ''}`} />
                   {showHint ? 'Hide Hint' : 'Show Hint'}
                 </Button>
                 {showHint && (
-                  <p className="text-sm text-muted-foreground italic bg-muted/50 p-3 rounded-lg">
+                  <p className="text-sm text-muted-foreground italic bg-amber-50 dark:bg-amber-950/30 p-3 rounded-lg border border-amber-200 dark:border-amber-800 animate-fade-in-up">
                     {card.hint}
                   </p>
                 )}
@@ -135,22 +135,22 @@ export function FlashcardView({ card, onAnswer, cardNumber, totalCards, disabled
 
           {/* Answer Input */}
           {!isRevealed && (
-            <div className="space-y-4 max-w-md mx-auto">
+            <div className="space-y-4 max-w-md mx-auto animate-fade-in-up">
               <Input
                 ref={inputRef}
                 value={userResponse}
                 onChange={(e) => setUserResponse(e.target.value)}
                 onKeyPress={handleKeyPress}
                 placeholder="Type your answer..."
-                className="text-center text-lg py-3"
+                className="text-center text-lg py-3 transition-all focus:ring-2 focus:ring-primary/50"
                 autoComplete="off"
                 disabled={disabled}
               />
-              <Button 
+              <Button
                 onClick={handleReveal}
                 variant="reveal"
                 size="lg"
-                className="w-full"
+                className="w-full animate-pulse-glow"
                 disabled={disabled}
               >
                 <Eye className="w-4 h-4 mr-2" />
@@ -161,69 +161,78 @@ export function FlashcardView({ card, onAnswer, cardNumber, totalCards, disabled
 
           {/* Revealed Content */}
           {isRevealed && (
-            <div className="space-y-6 max-w-md mx-auto">
+            <div className="space-y-6 max-w-md mx-auto animate-scale-in">
               {/* User's answer and evaluation */}
               <div className="space-y-3">
                 <div className="text-sm text-muted-foreground">
                   Your answer: <span className="font-medium text-foreground">"{userResponse || 'No answer'}"</span>
                 </div>
-                
+
                 {evaluation && (
-                  <div className={`p-3 rounded-lg ${
-                    evaluation.isCorrect 
-                      ? 'bg-success/10 text-success-foreground border border-success/20' 
-                      : 'bg-destructive/10 text-destructive-foreground border border-destructive/20'
+                  <div className={`p-4 rounded-lg transition-all ${
+                    evaluation.isCorrect
+                      ? 'feedback-correct border border-green-200 dark:border-green-800'
+                      : 'feedback-incorrect border border-red-200 dark:border-red-800'
                   }`}>
-                    {evaluation.feedback}
+                    <div className="flex items-center gap-2">
+                      {evaluation.isCorrect ? (
+                        <span className="text-green-600 dark:text-green-400 text-lg">✓</span>
+                      ) : (
+                        <span className="text-red-600 dark:text-red-400 text-lg">✗</span>
+                      )}
+                      <span className={evaluation.isCorrect ? 'text-green-700 dark:text-green-300' : 'text-red-700 dark:text-red-300'}>
+                        {evaluation.feedback}
+                      </span>
+                    </div>
                   </div>
                 )}
               </div>
 
               {/* Correct Answer */}
-              <div className="p-4 bg-muted border border-border rounded-lg">
-                <div className="text-sm text-muted-foreground mb-2">Correct Answer:</div>
-                <div className="text-xl font-semibold text-foreground">
+              <div className="p-5 bg-gradient-to-br from-primary/5 to-primary/10 border border-primary/20 rounded-xl animate-fade-in-up">
+                <div className="text-sm text-muted-foreground mb-2 uppercase tracking-wide">Correct Answer</div>
+                <div className="text-xl md:text-2xl font-semibold text-foreground">
                   {card.back}
                 </div>
               </div>
 
               {/* Quality Rating Buttons */}
-              <div className="space-y-3">
+              <div className="space-y-3 animate-fade-in-up" style={{ animationDelay: '100ms' }}>
                 <p className="text-sm text-muted-foreground">
-                  How well did you know this? (Use keys 1-4)
+                  How well did you know this? <span className="text-xs">(Use keys 1-4)</span>
                 </p>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-2 gap-3 stagger-children">
                   <Button
                     variant="again"
                     onClick={() => handleQualitySelect('again')}
-                    className="flex-col h-auto py-3"
+                    className="flex-col h-auto py-4 hover:scale-105 transition-transform"
                   >
-                    <span className="font-semibold">1</span>
-                    <span className="text-xs">{getQualityLabel('again')}</span>
+                    <span className="font-bold text-lg">1</span>
+                    <span className="text-xs opacity-90">{getQualityLabel('again')}</span>
                   </Button>
                   <Button
                     variant="hard"
                     onClick={() => handleQualitySelect('hard')}
-                    className="flex-col h-auto py-3"
+                    className="flex-col h-auto py-4 hover:scale-105 transition-transform"
                   >
-                    <span className="font-semibold">2</span>
-                    <span className="text-xs">{getQualityLabel('hard')}</span>
+                    <span className="font-bold text-lg">2</span>
+                    <span className="text-xs opacity-90">{getQualityLabel('hard')}</span>
                   </Button>
                   <Button
                     variant="good"
                     onClick={() => handleQualitySelect('good')}
-                    className="flex-col h-auto py-3"
+                    className="flex-col h-auto py-4 hover:scale-105 transition-transform"
                   >
-                    <span className="font-semibold">3</span>
-                    <span className="text-xs">{getQualityLabel('good')}</span>
+                    <span className="font-bold text-lg">3</span>
+                    <span className="text-xs opacity-90">{getQualityLabel('good')}</span>
                   </Button>
                   <Button
                     variant="easy"
                     onClick={() => handleQualitySelect('easy')}
-                    className="flex-col h-auto py-3"
+                    className="flex-col h-auto py-4 hover:scale-105 transition-transform"
                   >
-                    <span className="font-semibold">4</span>
-                    <span className="text-xs">{getQualityLabel('easy')}</span>
+                    <span className="font-bold text-lg">4</span>
+                    <span className="text-xs opacity-90">{getQualityLabel('easy')}</span>
                   </Button>
                 </div>
               </div>
@@ -233,7 +242,7 @@ export function FlashcardView({ card, onAnswer, cardNumber, totalCards, disabled
                 variant="ghost"
                 size="sm"
                 onClick={resetCard}
-                className="text-muted-foreground"
+                className="text-muted-foreground hover:text-foreground transition-colors"
               >
                 <RotateCcw className="w-4 h-4 mr-2" />
                 Try Again
