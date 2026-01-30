@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { DatabaseService } from '@/services/database';
 import { DeckImporter } from '@/services/deckImporter';
+import { Plus, Upload, Play, BookOpen } from 'lucide-react';
 import type { Deck } from '@/types/database';
 
 interface DeckPickerProps {
@@ -95,9 +97,35 @@ export function DeckPicker({ onDeckSelected }: DeckPickerProps) {
 
   if (loading) {
     return (
-      <div className="container max-w-4xl mx-auto p-6">
-        <div className="text-center">
-          <h1 className="text-3xl font-bold text-primary mb-2">Loading Decks...</h1>
+      <div className="container max-w-5xl mx-auto p-6 space-y-8">
+        <div className="text-center space-y-2">
+          <Skeleton className="h-4 w-16 mx-auto" />
+          <Skeleton className="h-10 w-64 mx-auto" />
+          <Skeleton className="h-4 w-48 mx-auto" />
+        </div>
+        <Card className="bg-card">
+          <CardContent className="py-6">
+            <div className="flex gap-4 flex-wrap items-center justify-center">
+              <Skeleton className="h-10 w-28" />
+              <Skeleton className="h-10 w-28" />
+              <Skeleton className="h-5 w-24" />
+            </div>
+          </CardContent>
+        </Card>
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <Card key={i} className="bg-card">
+              <CardHeader>
+                <Skeleton className="h-6 w-3/4" />
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <Skeleton className="h-4 w-1/2" />
+                  <Skeleton className="h-4 w-1/3" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       </div>
     );
@@ -114,73 +142,98 @@ export function DeckPicker({ onDeckSelected }: DeckPickerProps) {
       <Card className="bg-card text-card-foreground border-border shadow-card">
         <CardContent className="py-6">
           <div className="flex gap-4 flex-wrap items-center justify-center">
-            <Button 
+            <Button
               onClick={handleQuickDemo}
               disabled={importing}
-              className="bg-gradient-primary text-white"
+              className="tap-target"
             >
+              <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
               {importing ? 'Creating...' : 'Quick Demo'}
             </Button>
-            <Button 
+            <Button
               onClick={handleCSVImport}
               disabled={importing}
               variant="outline"
+              className="tap-target"
             >
+              <Upload className="mr-2 h-4 w-4" aria-hidden="true" />
               {importing ? 'Importing...' : 'Import CSV'}
             </Button>
-            <label className="flex items-center gap-2 text-sm text-muted-foreground">
+            <label className="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer tap-target px-3">
               <input
                 type="checkbox"
                 checked={dueOnly}
                 onChange={(e) => setDueOnly(e.target.checked)}
-                className="h-4 w-4"
+                className="h-4 w-4 rounded border-border"
+                aria-describedby="due-only-desc"
               />
-              Due only
+              <span>Due only</span>
+              <span id="due-only-desc" className="sr-only">
+                Only show cards that are due for review
+              </span>
             </label>
           </div>
         </CardContent>
       </Card>
 
       {decks.length > 0 ? (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3" role="list" aria-label="Available decks">
           {decks.map((deck) => (
-            <Card 
-              key={deck.id} 
-              className="cursor-pointer transition-all hover:shadow-lg hover:scale-[1.01] border-border bg-card text-card-foreground hover:bg-card/90"
+            <Card
+              key={deck.id}
+              className="cursor-pointer transition-all hover:shadow-lg hover:scale-[1.01] border-border bg-card text-card-foreground hover:bg-card/90 focus-within:ring-2 focus-within:ring-ring"
               onClick={() => onDeckSelected(deck.id, { dueOnly })}
+              role="listitem"
             >
-              <CardHeader>
-                <CardTitle className="text-primary">{deck.title}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-2">
-                  {deck.tags.length > 0 && (
-                    <div className="flex flex-wrap gap-1">
-                      {deck.tags.map((tag) => (
-                        <span 
-                          key={tag}
-                          className="px-2 py-1 bg-accent text-accent-foreground text-xs rounded-full"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  <p className="text-sm text-muted-foreground">
-                    Source: {deck.source || 'Manual'}
-                  </p>
-                </div>
-              </CardContent>
+              <button
+                className="w-full text-left focus:outline-none"
+                aria-label={`Study ${deck.title} deck`}
+              >
+                <CardHeader className="flex flex-row items-start justify-between space-y-0">
+                  <CardTitle className="text-primary">{deck.title}</CardTitle>
+                  <Play className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    {deck.tags.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {deck.tags.map((tag) => (
+                          <span
+                            key={tag}
+                            className="px-2 py-1 bg-accent text-accent-foreground text-xs rounded-full"
+                          >
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-sm text-muted-foreground">
+                      Source: {deck.source || 'Manual'}
+                    </p>
+                  </div>
+                </CardContent>
+              </button>
             </Card>
           ))}
         </div>
       ) : (
-        <Card className="text-center p-8 bg-card text-card-foreground">
-          <CardContent>
-            <p className="text-muted-foreground mb-4">No decks available</p>
-            <p className="text-sm text-muted-foreground">
-              Create a demo deck or import a CSV file to get started
+        <Card className="bg-card text-card-foreground">
+          <CardContent className="empty-state">
+            <BookOpen className="h-12 w-12 text-muted-foreground mb-4" aria-hidden="true" />
+            <h3 className="text-lg font-semibold mb-2">No decks yet</h3>
+            <p className="text-muted-foreground mb-6 max-w-md">
+              Create your first flashcard deck to start learning. You can create a quick demo or import your own cards from a CSV file.
             </p>
+            <div className="flex gap-3 flex-wrap justify-center">
+              <Button onClick={handleQuickDemo} disabled={importing}>
+                <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+                Create Demo Deck
+              </Button>
+              <Button variant="outline" onClick={handleCSVImport} disabled={importing}>
+                <Upload className="mr-2 h-4 w-4" aria-hidden="true" />
+                Import CSV
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

@@ -1,13 +1,19 @@
 /**
- * Lightweight spaced repetition scheduler
- * Inspired by FSRS but simplified for MVP
+ * Spaced repetition scheduling utilities
+ *
+ * NOTE: The actual SM-2 scheduling is handled server-side via POST /api/cards/:id/review.
+ * Client code should use the server's due_at response for session_events.next_due.
+ * The functions below are kept for UI display purposes only.
  */
 
 export type Quality = 'again' | 'hard' | 'good' | 'easy';
 
+/**
+ * @deprecated Use server SM-2 response (due_at) instead. Kept for display/fallback only.
+ */
 export function calculateNextDue(quality: Quality): Date {
   const now = new Date();
-  
+
   switch (quality) {
     case 'again':
       return new Date(now.getTime() + 1 * 60 * 1000); // 1 minute

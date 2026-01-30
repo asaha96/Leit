@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Skeleton } from '@/components/ui/skeleton';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { Calendar, TrendingUp, Target, Clock, BookOpen, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
@@ -285,7 +286,50 @@ export const Dashboard = () => {
   };
 
   if (loading) {
-    return <div className="p-6">Loading dashboard...</div>;
+    return (
+      <div className="space-y-6 p-6">
+        <div className="flex items-center justify-between mb-4">
+          <Skeleton className="h-9 w-40" />
+          <Skeleton className="h-6 w-36" />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {[1, 2, 3, 4, 5].map((i) => (
+            <Card key={i}>
+              <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="h-4 w-4 rounded" />
+              </CardHeader>
+              <CardContent>
+                <Skeleton className="h-8 w-16 mb-1" />
+                <Skeleton className="h-3 w-20" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-6 w-40" />
+              <Skeleton className="h-4 w-56" />
+            </CardHeader>
+            <CardContent>
+              <Skeleton className="h-[300px] w-full" />
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader>
+              <Skeleton className="h-6 w-48" />
+              <Skeleton className="h-4 w-64" />
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {[1, 2, 3, 4, 5].map((i) => (
+                <Skeleton key={i} className="h-12 w-full" />
+              ))}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
   }
 
   return (

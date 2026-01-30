@@ -1,6 +1,5 @@
 import { DatabaseService } from './database';
 import { evaluateAnswer } from '@/utils/evaluator';
-import { calculateNextDue } from '@/utils/scheduler';
 import type { Session, SessionEvent, Card, User } from '@/types/database';
 import type { Quality } from '@/utils/scheduler';
 
@@ -43,18 +42,26 @@ export class SessionManager {
 
     // Evaluate the answer
     const evaluation = evaluateAnswer(response, expectedAnswers);
-    
-    // Calculate next due date
-    const nextDue = calculateNextDue(quality);
 
-    // Record the event
+    // Update card schedule on server and get server-computed due_at (SM-2)
+    let nextDue: string;
+    try {
+      const updatedCard = await DatabaseService.updateCardSchedule(cardId, quality);
+      // Use server's SM-2 computed due_at
+      nextDue = updatedCard?.due_at || new Date().toISOString();
+    } catch (err) {
+      console.error('Failed to update card schedule', err);
+      nextDue = new Date().toISOString();
+    }
+
+    // Record the event with server-derived next_due
     const event = await DatabaseService.createSessionEvent({
       session_id: this.sessionId,
       card_id: cardId,
       response,
       ai_score: evaluation.score,
       quality,
-      next_due: nextDue.toISOString()
+      next_due: nextDue
     });
 
     if (!event) {

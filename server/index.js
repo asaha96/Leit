@@ -302,9 +302,14 @@ app.post("/api/cards/:id/review", authMiddleware, async (req, res) => {
   const { quality } = req.body;
   if (!quality) return res.status(400).json({ error: "quality is required" });
   try {
-    const { rows } = await pool.query("SELECT ease, interval_days, lapses FROM cards WHERE id = $1", [
-      req.params.id,
-    ]);
+    // Verify card ownership via deck
+    const { rows } = await pool.query(
+      `SELECT c.ease, c.interval_days, c.lapses
+       FROM cards c
+       JOIN decks d ON c.deck_id = d.id
+       WHERE c.id = $1 AND d.user_id = $2`,
+      [req.params.id, req.userId]
+    );
     if (rows.length === 0) return res.status(404).json({ error: "Card not found" });
 
     const current = rows[0];
@@ -341,10 +346,11 @@ const optionalAuth = (req, _res, next) => {
 };
 
 // --- Decks ---
-app.get("/api/decks", authMiddleware, async (_req, res) => {
+app.get("/api/decks", authMiddleware, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      "SELECT * FROM decks ORDER BY created_at DESC"
+      "SELECT * FROM decks WHERE user_id = $1 ORDER BY created_at DESC",
+      [req.userId]
     );
     res.json({ data: rows });
   } catch (error) {
@@ -356,8 +362,8 @@ app.get("/api/decks", authMiddleware, async (_req, res) => {
 app.get("/api/decks/:id", authMiddleware, async (req, res) => {
   try {
     const { rows } = await pool.query(
-      "SELECT * FROM decks WHERE id = $1",
-      [req.params.id]
+      "SELECT * FROM decks WHERE id = $1 AND user_id = $2",
+      [req.params.id, req.userId]
     );
     const deck = rows[0];
     if (!deck) return res.status(404).json({ error: "Deck not found" });
@@ -373,10 +379,10 @@ app.post("/api/decks", authMiddleware, async (req, res) => {
   if (!title) return res.status(400).json({ error: "Title required" });
   try {
     const { rows } = await pool.query(
-      `INSERT INTO decks (title, tags, source)
-       VALUES ($1, $2, $3)
+      `INSERT INTO decks (user_id, title, tags, source)
+       VALUES ($1, $2, $3, $4)
        RETURNING *`,
-      [title, tags || [], source || null]
+      [req.userId, title, tags || [], source || null]
     );
     res.status(201).json({ data: rows[0] });
   } catch (error) {
@@ -386,10 +392,15 @@ app.post("/api/decks", authMiddleware, async (req, res) => {
 });
 
 // --- Cards ---
-app.get("/api/cards", authMiddleware, async (_req, res) => {
+app.get("/api/cards", authMiddleware, async (req, res) => {
   try {
+    // Only return cards from decks owned by the authenticated user
     const { rows } = await pool.query(
-      "SELECT * FROM cards ORDER BY created_at ASC"
+      `SELECT c.* FROM cards c
+       JOIN decks d ON c.deck_id = d.id
+       WHERE d.user_id = $1
+       ORDER BY c.created_at ASC`,
+      [req.userId]
     );
     res.json({ data: rows });
   } catch (error) {
@@ -400,6 +411,14 @@ app.get("/api/cards", authMiddleware, async (_req, res) => {
 
 app.get("/api/decks/:deckId/cards", authMiddleware, async (req, res) => {
   try {
+    // Verify deck ownership before returning cards
+    const { rows: deckRows } = await pool.query(
+      "SELECT id FROM decks WHERE id = $1 AND user_id = $2",
+      [req.params.deckId, req.userId]
+    );
+    if (deckRows.length === 0) {
+      return res.status(404).json({ error: "Deck not found" });
+    }
     const { rows } = await pool.query(
       "SELECT * FROM cards WHERE deck_id = $1 ORDER BY created_at ASC",
       [req.params.deckId]
@@ -417,6 +436,14 @@ app.post("/api/cards", authMiddleware, async (req, res) => {
     return res.status(400).json({ error: "deck_id, front, back are required" });
   }
   try {
+    // Verify deck ownership before creating card
+    const { rows: deckRows } = await pool.query(
+      "SELECT id FROM decks WHERE id = $1 AND user_id = $2",
+      [deck_id, req.userId]
+    );
+    if (deckRows.length === 0) {
+      return res.status(404).json({ error: "Deck not found" });
+    }
     const { rows } = await pool.query(
       `INSERT INTO cards (deck_id, front, back, hints, answers, tags, media_refs)
        VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -446,6 +473,23 @@ app.post("/api/cards/bulk", authMiddleware, async (req, res) => {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+
+    // Get unique deck_ids from cards and verify ownership
+    const deckIds = [...new Set(cards.map(c => c.deck_id).filter(Boolean))];
+    if (deckIds.length > 0) {
+      const { rows: ownedDecks } = await client.query(
+        "SELECT id FROM decks WHERE id = ANY($1::uuid[]) AND user_id = $2",
+        [deckIds, req.userId]
+      );
+      const ownedDeckIds = new Set(ownedDecks.map(d => d.id));
+      for (const deckId of deckIds) {
+        if (!ownedDeckIds.has(deckId)) {
+          await client.query("ROLLBACK");
+          return res.status(404).json({ error: "Deck not found or not owned by user" });
+        }
+      }
+    }
+
     const inserted = [];
     for (const card of cards) {
       const { deck_id, front, back, hints, answers, tags, media_refs } = card;
@@ -576,6 +620,60 @@ app.get("/api/sessions/:id/events", authMiddleware, async (req, res) => {
     console.error("Get session events error", error);
     res.status(500).json({ error: "Internal server error" });
   }
+});
+
+// --- AI / DeepSeek Proxy ---
+const deepseekEndpoint = process.env.DEEPSEEK_ENDPOINT;
+const deepseekApiKey = process.env.DEEPSEEK_API_KEY;
+const deepseekDeployment = process.env.DEEPSEEK_DEPLOYMENT || "DeepSeek-V3";
+
+app.post("/api/ai/chat", authMiddleware, async (req, res) => {
+  // Check if DeepSeek is configured
+  if (!deepseekEndpoint || !deepseekApiKey) {
+    return res.status(503).json({ error: "AI service not configured" });
+  }
+
+  const { messages, max_tokens = 500 } = req.body;
+  if (!messages || !Array.isArray(messages)) {
+    return res.status(400).json({ error: "messages array is required" });
+  }
+
+  try {
+    const apiUrl = `${deepseekEndpoint.replace(/\/$/, "")}/chat/completions`;
+
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": deepseekApiKey,
+      },
+      body: JSON.stringify({
+        model: deepseekDeployment,
+        messages,
+        max_tokens,
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("DeepSeek API error:", response.status, errorText);
+      return res.status(response.status).json({ error: "AI service error" });
+    }
+
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    console.error("DeepSeek proxy error:", error);
+    res.status(500).json({ error: "AI service unavailable" });
+  }
+});
+
+// Check if AI is available (no auth required for feature detection)
+app.get("/api/ai/status", (_req, res) => {
+  res.json({
+    available: !!(deepseekEndpoint && deepseekApiKey),
+  });
 });
 
 app.listen(port, () => {

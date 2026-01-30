@@ -31,12 +31,14 @@ psql postgres://localhost/leit -f server/schema.sql
 ```
 DATABASE_URL=postgres://localhost:5432/leit
 JWT_SECRET=change-me
+CANVAS_TOKEN_SECRET=change-me-too
 VITE_CANVAS_API_KEY=            # optional; Canvas token now per-user
+# VITE_API_ORIGIN=              # optional; for production API URL
 ```
 4) Run
 ```bash
 npm run server:dev   # API on 3001
-npm run dev -- --host 127.0.0.1 --port 5177   # Vite
+npm run dev          # Vite on 5177
 ```
 5) Sign up/sign in, create/import a deck, toggle “Due only,” and start a session.
 
@@ -54,8 +56,8 @@ src/
 ```
 
 ## Key Commands
-- `npm run server:dev` — start Express API
-- `npm run dev -- --host 127.0.0.1 --port 5177` — start Vite
+- `npm run server:dev` — start Express API on port 3001
+- `npm run dev` — start Vite on port 5177
 
 ## Data Model (core tables)
 - decks, cards (with due_at, ease, interval_days, lapses), sessions, session_events, users, canvas_tokens

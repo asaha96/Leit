@@ -6,18 +6,11 @@ import { componentTagger } from "lovable-tagger";
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
   // Load env file based on `mode` in the current working directory.
-  const env = loadEnv(mode, process.cwd(), '');
-  
-  // Debug: Check if Canvas API key is loaded
-  console.log('🔑 Canvas API Key loaded:', env.VITE_CANVAS_API_KEY ? 'YES ✅' : 'NO ❌');
-  if (env.VITE_CANVAS_API_KEY) {
-    console.log('🔑 Key preview:', env.VITE_CANVAS_API_KEY.substring(0, 10) + '...');
-  }
-  
+  loadEnv(mode, process.cwd(), '');
   return {
     server: {
-      host: "localhost",
-      port: 8080,
+      host: "127.0.0.1",
+      port: 5177,
       proxy: {
         '/api/canvas': {
           target: 'http://localhost:3001',

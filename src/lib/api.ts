@@ -1,5 +1,16 @@
 const TOKEN_KEY = "auth_token";
 
+// API origin: use VITE_API_ORIGIN in production, relative /api in dev (Vite proxy)
+const getApiBase = () => {
+  const origin = import.meta.env.VITE_API_ORIGIN;
+  if (origin) {
+    // Remove trailing slash if present
+    return origin.replace(/\/$/, "") + "/api";
+  }
+  // In dev, Vite proxy handles /api
+  return "/api";
+};
+
 export const getAuthToken = () => {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(TOKEN_KEY);
@@ -26,7 +37,8 @@ export const apiFetch = async (path: string, options: RequestInit = {}) => {
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const res = await fetch(`/api${path}`, {
+  const apiBase = getApiBase();
+  const res = await fetch(`${apiBase}${path}`, {
     ...options,
     headers,
   });

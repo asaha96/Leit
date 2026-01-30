@@ -30,8 +30,11 @@ const Index = () => {
   // Show loading screen
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-background to-muted/40">
-        <div className="text-lg text-foreground">Loading...</div>
+      <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-b from-background to-muted/40 gap-4">
+        <div className="animate-pulse">
+          <div className="h-12 w-12 bg-primary/20 rounded-lg" />
+        </div>
+        <div className="text-lg text-muted-foreground">Loading Leit...</div>
       </div>
     );
   }

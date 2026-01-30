@@ -3,7 +3,7 @@ import { Card, SessionEntry, SessionStats } from '@/types/flashcard';
 import { FlashcardView } from './FlashcardView';
 import { SessionProgress } from './SessionProgress';
 import { SessionComplete } from './SessionComplete';
-import { Quality, calculateNextDue } from '@/utils/scheduler';
+import { Quality } from '@/utils/scheduler';
 import { evaluateAnswer } from '@/utils/evaluator';
 import { DatabaseService } from '@/services/database';
 import { Button } from '@/components/ui/button';
@@ -29,13 +29,25 @@ export function FlashcardSession({ cards, onSessionComplete, onExit }: Flashcard
   const currentCard = cards[currentCardIndex];
   const isLastCard = currentCardIndex === cards.length - 1;
 
-  const handleAnswer = useCallback((response: string, quality: Quality) => {
+  const handleAnswer = useCallback(async (response: string, quality: Quality) => {
     if (!currentCard || isPaused) return;
 
     // Evaluate the answer
     const evaluation = evaluateAnswer(response, currentCard.answers);
-    
-    // Create session entry
+
+    // Update card schedule on server and get server-computed due_at (SM-2)
+    let nextDue: string;
+    try {
+      const updatedCard = await DatabaseService.updateCardSchedule(currentCard.id, quality);
+      // Use server's SM-2 computed due_at
+      nextDue = updatedCard?.due_at || new Date().toISOString();
+    } catch (err) {
+      console.error('Failed to update card schedule', err);
+      // Fallback to current time if server call fails
+      nextDue = new Date().toISOString();
+    }
+
+    // Create session entry with server-derived next_due
     const sessionEntry: SessionEntry = {
       userId: 'local-user',
       cardId: currentCard.id,
@@ -43,7 +55,7 @@ export function FlashcardSession({ cards, onSessionComplete, onExit }: Flashcard
       score: evaluation.score,
       quality,
       timestamp: Date.now(),
-      nextDue: calculateNextDue(quality).toISOString()
+      nextDue
     };
 
     // Update session entries
@@ -51,20 +63,20 @@ export function FlashcardSession({ cards, onSessionComplete, onExit }: Flashcard
     setSessionEntries(newEntries);
 
     // Update stats
-    const correctAnswers = evaluation.isCorrect 
-      ? sessionStats.correctAnswers + 1 
+    const correctAnswers = evaluation.isCorrect
+      ? sessionStats.correctAnswers + 1
       : sessionStats.correctAnswers;
-    
+
     const totalScore = newEntries.reduce((sum, entry) => sum + entry.score, 0);
     const averageScore = totalScore / newEntries.length;
-    
+
     const newStats: SessionStats = {
       totalCards: cards.length,
       correctAnswers,
       accuracy: correctAnswers / newEntries.length,
       averageScore
     };
-    
+
     setSessionStats(newStats);
 
     // Move to next card or complete session
@@ -74,11 +86,6 @@ export function FlashcardSession({ cards, onSessionComplete, onExit }: Flashcard
     } else {
       setCurrentCardIndex(prev => prev + 1);
     }
-
-    // Fire-and-forget schedule update
-    DatabaseService.updateCardSchedule(currentCard.id, quality).catch((err) => {
-      console.error('Failed to update card schedule', err);
-    });
   }, [currentCard, sessionEntries, sessionStats, cards.length, isLastCard, onSessionComplete, isPaused]);
 
   const handleRestart = () => {

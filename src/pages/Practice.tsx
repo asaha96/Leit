@@ -5,10 +5,11 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { CheckCircle, XCircle, ArrowRight } from 'lucide-react';
+import { CheckCircle, XCircle, ArrowRight, Sparkles, Lightbulb } from 'lucide-react';
 import { useAuth } from '@/hooks/useAuth';
 import type { Deck } from '@/types/database';
 import { DatabaseService } from '@/services/database';
+import { AIService } from '@/services/aiService';
 
 interface PracticeQuestion {
   id: string;
@@ -31,6 +32,10 @@ export const Practice = () => {
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [results, setResults] = useState<{ correct: boolean; question: string; answer: string }[]>([]);
   const [generating, setGenerating] = useState(false);
+  const [aiAvailable, setAiAvailable] = useState(false);
+  const [aiHint, setAiHint] = useState<string | null>(null);
+  const [loadingHint, setLoadingHint] = useState(false);
+  const [aiExplanation, setAiExplanation] = useState<string | null>(null);
 
   // Question generation settings
   const [numSA, setNumSA] = useState(2);
@@ -39,7 +44,13 @@ export const Practice = () => {
 
   useEffect(() => {
     fetchDecks();
+    checkAiAvailability();
   }, []);
+
+  const checkAiAvailability = async () => {
+    const available = await AIService.isAvailable();
+    setAiAvailable(available);
+  };
 
   const fetchDecks = async () => {
     const data = await DatabaseService.getDecks();
@@ -138,6 +149,36 @@ export const Practice = () => {
     }
   };
 
+  const getAiHint = async () => {
+    if (!currentQuestion || !aiAvailable) return;
+
+    setLoadingHint(true);
+    try {
+      const hint = await AIService.getHint(currentQuestion.question, currentQuestion.correctAnswer);
+      setAiHint(hint);
+    } catch (error) {
+      console.error('Error getting AI hint:', error);
+    } finally {
+      setLoadingHint(false);
+    }
+  };
+
+  const getAiExplanation = async (isCorrect: boolean, userAns: string) => {
+    if (!currentQuestion || !aiAvailable) return;
+
+    try {
+      const explanation = await AIService.explainAnswer(
+        currentQuestion.question,
+        currentQuestion.correctAnswer,
+        userAns,
+        isCorrect
+      );
+      setAiExplanation(explanation);
+    } catch (error) {
+      console.error('Error getting AI explanation:', error);
+    }
+  };
+
   const submitAnswer = async () => {
     if (!sessionId) return;
 
@@ -161,6 +202,11 @@ export const Practice = () => {
     }]);
 
     setShowResult(true);
+
+    // Get AI explanation if available
+    if (aiAvailable) {
+      getAiExplanation(isCorrect, answer);
+    }
   };
 
   const nextQuestion = () => {
@@ -169,6 +215,8 @@ export const Practice = () => {
       setUserAnswer('');
       setSelectedChoice('');
       setShowResult(false);
+      setAiHint(null);
+      setAiExplanation(null);
     } else {
       finishSession();
     }
@@ -332,7 +380,29 @@ export const Practice = () => {
                 />
               )}
 
-              <Button 
+              {aiAvailable && !aiHint && (
+                <Button
+                  variant="outline"
+                  onClick={getAiHint}
+                  disabled={loadingHint}
+                  className="w-full"
+                >
+                  <Lightbulb className="mr-2 h-4 w-4" />
+                  {loadingHint ? 'Getting hint...' : 'Get AI Hint'}
+                </Button>
+              )}
+
+              {aiHint && (
+                <div className="p-3 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800">
+                  <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400 font-medium mb-1">
+                    <Lightbulb className="h-4 w-4" />
+                    Hint
+                  </div>
+                  <p className="text-sm text-amber-800 dark:text-amber-300">{aiHint}</p>
+                </div>
+              )}
+
+              <Button
                 onClick={submitAnswer}
                 disabled={currentQuestion.type === 'MCQ' ? !selectedChoice : !userAnswer.trim()}
                 className="w-full"
@@ -345,7 +415,7 @@ export const Practice = () => {
           {showResult && (
             <div className="space-y-4">
               <div className={`p-4 rounded-lg ${
-                results[results.length - 1]?.correct ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'
+                results[results.length - 1]?.correct ? 'bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800' : 'bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800'
               }`}>
                 <div className="flex items-center space-x-2">
                   {results[results.length - 1]?.correct ? (
@@ -361,6 +431,16 @@ export const Practice = () => {
                   <strong>Correct answer:</strong> {currentQuestion.correctAnswer}
                 </p>
               </div>
+
+              {aiAvailable && aiExplanation && (
+                <div className="p-4 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800">
+                  <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400 font-medium mb-2">
+                    <Sparkles className="h-4 w-4" />
+                    AI Explanation
+                  </div>
+                  <p className="text-sm text-blue-800 dark:text-blue-300">{aiExplanation}</p>
+                </div>
+              )}
 
               <Button onClick={nextQuestion} className="w-full">
                 {isLastQuestion ? 'Finish Session' : (

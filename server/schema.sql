@@ -14,12 +14,16 @@ CREATE TABLE IF NOT EXISTS users (
 -- Decks table
 CREATE TABLE IF NOT EXISTS decks (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   tags TEXT[] NOT NULL DEFAULT '{}',
   source TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Index for user-scoped deck queries
+CREATE INDEX IF NOT EXISTS idx_decks_user_id ON decks(user_id);
 
 -- Cards table
 CREATE TABLE IF NOT EXISTS cards (
