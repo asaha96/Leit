@@ -625,7 +625,7 @@ app.get("/api/sessions/:id/events", authMiddleware, async (req, res) => {
 // --- AI / DeepSeek Proxy ---
 const deepseekEndpoint = process.env.DEEPSEEK_ENDPOINT;
 const deepseekApiKey = process.env.DEEPSEEK_API_KEY;
-const deepseekDeployment = process.env.DEEPSEEK_DEPLOYMENT || "DeepSeek-V3";
+const deepseekDeployment = process.env.DEEPSEEK_DEPLOYMENT || "DeepSeek-V3.2";
 
 app.post("/api/ai/chat", authMiddleware, async (req, res) => {
   // Check if DeepSeek is configured
@@ -639,13 +639,14 @@ app.post("/api/ai/chat", authMiddleware, async (req, res) => {
   }
 
   try {
+    // Azure OpenAI compatible endpoint
     const apiUrl = `${deepseekEndpoint.replace(/\/$/, "")}/chat/completions`;
 
     const response = await fetch(apiUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${deepseekApiKey}`,
+        "api-key": deepseekApiKey,
       },
       body: JSON.stringify({
         model: deepseekDeployment,
@@ -658,7 +659,7 @@ app.post("/api/ai/chat", authMiddleware, async (req, res) => {
     if (!response.ok) {
       const errorText = await response.text();
       console.error("DeepSeek API error:", response.status, errorText);
-      return res.status(response.status).json({ error: "AI service error" });
+      return res.status(response.status).json({ error: "AI service error", details: errorText });
     }
 
     const data = await response.json();
