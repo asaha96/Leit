@@ -640,7 +640,12 @@ app.get("/api/ai/status", (_req, res) => {
   });
 });
 
-app.listen(port, () => {
-  console.log(`Local API server running on http://localhost:${port}`);
-});
+// Only listen when running as a standalone server (Railway, local); on Vercel the app is exported and run as serverless
+if (!process.env.VERCEL) {
+  app.listen(port, () => {
+    console.log(`Local API server running on http://localhost:${port}`);
+  });
+}
+
+export default app;
 
