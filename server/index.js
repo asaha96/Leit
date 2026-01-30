@@ -31,6 +31,11 @@ if (!databaseUrl && process.env.NODE_ENV === "production") {
   process.exit(1);
 }
 
+// For Supabase/cloud databases: disable SSL cert verification in production
+if (process.env.NODE_ENV === "production") {
+  process.env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
+}
+
 // Serverless-friendly pool configuration
 const pool = new Pool({
   connectionString: databaseUrl || "postgres://localhost:5432/leit",
@@ -38,8 +43,6 @@ const pool = new Pool({
   max: process.env.VERCEL ? 3 : 10,
   idleTimeoutMillis: process.env.VERCEL ? 10000 : 30000,
   connectionTimeoutMillis: 10000,
-  // SSL configuration for Supabase/cloud databases
-  ssl: process.env.NODE_ENV === "production" ? { rejectUnauthorized: false } : false,
 });
 
 // Ensure storage for per-user Canvas tokens (encrypted)
