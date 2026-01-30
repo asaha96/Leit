@@ -5,7 +5,7 @@ import path from "path";
 import crypto from "crypto";
 import dayjs from "dayjs";
 import { Pool } from "pg";
-import { clerkClient, clerkMiddleware, getAuth } from "@clerk/express";
+import { createClerkClient, clerkMiddleware, getAuth } from "@clerk/express";
 
 // Only load .env files in development (Railway/Vercel set env vars directly)
 if (process.env.NODE_ENV !== "production") {
@@ -17,6 +17,12 @@ const app = express();
 const port = process.env.PORT || 3001;
 const canvasTokenSecret = process.env.CANVAS_TOKEN_SECRET || "dev-secret-change-me";
 const canvasApiBase = "https://canvas.instructure.com/api/v1";
+
+// Initialize Clerk client with explicit keys (required for serverless)
+const clerkClient = createClerkClient({
+  secretKey: process.env.CLERK_SECRET_KEY,
+  publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
+});
 
 // Database connection - require DATABASE_URL in production
 const databaseUrl = process.env.DATABASE_URL;
@@ -99,7 +105,8 @@ const authMiddleware = async (req, res, next) => {
     const auth = getAuth(req);
 
     if (!auth.userId) {
-      return res.status(401).json({ error: "Unauthorized" });
+      console.error("Auth: No userId in request. Auth object:", JSON.stringify(auth));
+      return res.status(401).json({ error: "Unauthorized - no user session" });
     }
 
     // Get user info from Clerk
@@ -123,8 +130,8 @@ const authMiddleware = async (req, res, next) => {
     req.clerkUserId = auth.userId;
     next();
   } catch (err) {
-    console.error("Auth middleware error:", err);
-    return res.status(401).json({ error: "Invalid token" });
+    console.error("Auth middleware error:", err.message, err.stack);
+    return res.status(401).json({ error: "Invalid token", details: err.message });
   }
 };
 
