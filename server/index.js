@@ -4,10 +4,10 @@ import dotenv from "dotenv";
 import path from "path";
 import crypto from "crypto";
 import dayjs from "dayjs";
-import { Pool } from "pg";
+import { createClient } from "@supabase/supabase-js";
 import { createClerkClient, clerkMiddleware, getAuth } from "@clerk/express";
 
-// Only load .env files in development (Railway/Vercel set env vars directly)
+// Only load .env files in development (Vercel sets env vars directly)
 if (process.env.NODE_ENV !== "production") {
   dotenv.config();
   dotenv.config({ path: path.resolve(process.cwd(), ".env.local"), override: true });
@@ -24,58 +24,31 @@ const clerkClient = createClerkClient({
   publishableKey: process.env.CLERK_PUBLISHABLE_KEY,
 });
 
-// Database connection - require DATABASE_URL in production
-const databaseUrl = process.env.DATABASE_URL;
-if (!databaseUrl && process.env.NODE_ENV === "production") {
-  console.error("ERROR: DATABASE_URL environment variable is required in production");
-  process.exit(1);
+// Initialize Supabase client with service role key for server-side operations
+const supabaseUrl = process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error("ERROR: SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required");
+  if (process.env.NODE_ENV === "production") {
+    // Don't exit in production - let the error be caught per-request
+    console.error("Supabase not configured - database operations will fail");
+  }
 }
 
-// Determine if SSL is needed (any remote database, not localhost)
-const isRemoteDatabase = databaseUrl && !databaseUrl.includes("localhost") && !databaseUrl.includes("127.0.0.1");
-
-// Serverless-friendly pool configuration
-const pool = new Pool({
-  connectionString: databaseUrl || "postgres://localhost:5432/leit",
-  // Serverless: use fewer connections and shorter timeouts
-  max: process.env.VERCEL ? 3 : 10,
-  idleTimeoutMillis: process.env.VERCEL ? 10000 : 30000,
-  connectionTimeoutMillis: 10000,
-  // SSL: required for any remote database, disable strict cert verification for cloud providers
-  ssl: isRemoteDatabase ? { rejectUnauthorized: false } : false,
+const supabase = createClient(supabaseUrl || "", supabaseServiceKey || "", {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
 });
 
-// Ensure storage for per-user Canvas tokens (encrypted)
-const ensureCanvasTable = async () => {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS canvas_tokens (
-      user_id UUID PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
-      iv BYTEA NOT NULL,
-      tag BYTEA NOT NULL,
-      token_encrypted BYTEA NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-    );
-  `);
-};
-
-// Only run table creation on standalone server (not serverless - run migrations separately)
-if (!process.env.VERCEL) {
-  ensureCanvasTable().catch((err) => {
-    console.error("Failed to ensure canvas_tokens table", err);
-  });
-}
-
-// Allow localhost and Vercel origins (same-origin requests have no origin)
+// CORS configuration
 app.use(cors({
   origin: (origin, callback) => {
-    // No origin = same-origin request (Vercel serverless)
     if (!origin) return callback(null, true);
-    // Localhost for development
     if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return callback(null, true);
-    // All Vercel preview and production URLs
     if (origin?.endsWith(".vercel.app")) return callback(null, true);
-    // Custom allowed origins from env
     const allowedOrigins = (process.env.ALLOWED_ORIGINS || "").split(",").map((o) => o.trim()).filter(Boolean);
     if (allowedOrigins.includes(origin)) return callback(null, true);
     return callback(new Error("Not allowed by CORS"));
@@ -85,6 +58,7 @@ app.use(cors({
 app.use(express.json());
 app.use(clerkMiddleware());
 
+// Encryption helpers for Canvas tokens
 const deriveKey = (secret) => crypto.createHash("sha256").update(secret).digest();
 
 const encryptToken = (token) => {
@@ -93,14 +67,14 @@ const encryptToken = (token) => {
   const cipher = crypto.createCipheriv("aes-256-gcm", key, iv);
   const encrypted = Buffer.concat([cipher.update(token, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
-  return { iv, tag, encrypted };
+  return { iv: iv.toString("base64"), tag: tag.toString("base64"), encrypted: encrypted.toString("base64") };
 };
 
-const decryptToken = (iv, tag, encrypted) => {
+const decryptToken = (ivBase64, tagBase64, encryptedBase64) => {
   const key = deriveKey(canvasTokenSecret);
-  const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
-  decipher.setAuthTag(tag);
-  const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, Buffer.from(ivBase64, "base64"));
+  decipher.setAuthTag(Buffer.from(tagBase64, "base64"));
+  const decrypted = Buffer.concat([decipher.update(Buffer.from(encryptedBase64, "base64")), decipher.final()]);
   return decrypted.toString("utf8");
 };
 
@@ -110,7 +84,7 @@ const authMiddleware = async (req, res, next) => {
     const auth = getAuth(req);
 
     if (!auth.userId) {
-      console.error("Auth: No userId in request. Auth object:", JSON.stringify(auth));
+      console.error("Auth: No userId in request");
       return res.status(401).json({ error: "Unauthorized - no user session" });
     }
 
@@ -119,28 +93,42 @@ const authMiddleware = async (req, res, next) => {
     const email = clerkUser.emailAddresses?.[0]?.emailAddress;
     const displayName = clerkUser.fullName || clerkUser.firstName || email;
 
-    // Upsert user into database (sync Clerk user with local DB)
-    const { rows } = await pool.query(
-      `INSERT INTO users (external_sub, email, display_name)
-       VALUES ($1, $2, $3)
-       ON CONFLICT (external_sub) DO UPDATE SET
-         email = COALESCE(EXCLUDED.email, users.email),
-         display_name = COALESCE(EXCLUDED.display_name, users.display_name),
-         updated_at = NOW()
-       RETURNING id`,
-      [auth.userId, email, displayName]
-    );
+    // Upsert user into database using Supabase
+    const { data: existingUser } = await supabase
+      .from("users")
+      .select("id")
+      .eq("external_sub", auth.userId)
+      .single();
 
-    req.userId = rows[0].id;
+    let userId;
+    if (existingUser) {
+      // Update existing user
+      await supabase
+        .from("users")
+        .update({ email, display_name: displayName, updated_at: new Date().toISOString() })
+        .eq("external_sub", auth.userId);
+      userId = existingUser.id;
+    } else {
+      // Create new user
+      const { data: newUser, error } = await supabase
+        .from("users")
+        .insert({ external_sub: auth.userId, email, display_name: displayName })
+        .select("id")
+        .single();
+      if (error) throw error;
+      userId = newUser.id;
+    }
+
+    req.userId = userId;
     req.clerkUserId = auth.userId;
     next();
   } catch (err) {
-    console.error("Auth middleware error:", err.message, err.stack);
+    console.error("Auth middleware error:", err.message);
     return res.status(401).json({ error: "Invalid token", details: err.message });
   }
 };
 
-// Health check endpoints (both paths for compatibility)
+// Health check endpoints
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
@@ -150,15 +138,15 @@ app.get("/api/health", (_req, res) => {
 });
 
 // --- Auth ---
-// Clerk handles signup/signin - we just need an endpoint to get current user info
 app.get("/api/auth/me", authMiddleware, async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      "SELECT id, email, external_sub, display_name, created_at, updated_at FROM users WHERE id = $1",
-      [req.userId]
-    );
-    const user = rows[0];
-    if (!user) {
+    const { data: user, error } = await supabase
+      .from("users")
+      .select("id, email, external_sub, display_name, created_at, updated_at")
+      .eq("id", req.userId)
+      .single();
+
+    if (error || !user) {
       return res.status(404).json({ error: "User not found" });
     }
     res.json({ user });
@@ -171,14 +159,14 @@ app.get("/api/auth/me", authMiddleware, async (req, res) => {
 // --- Canvas Token Management ---
 app.get("/api/canvas/token", authMiddleware, async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      "SELECT 1 FROM canvas_tokens WHERE user_id = $1",
-      [req.userId]
-    );
-    res.json({ exists: rows.length > 0 });
+    const { data } = await supabase
+      .from("canvas_tokens")
+      .select("user_id")
+      .eq("user_id", req.userId)
+      .single();
+    res.json({ exists: !!data });
   } catch (error) {
-    console.error("Canvas token exists check error", error);
-    res.status(500).json({ error: "Internal server error" });
+    res.json({ exists: false });
   }
 });
 
@@ -189,12 +177,16 @@ app.post("/api/canvas/token", authMiddleware, async (req, res) => {
   }
   try {
     const { iv, tag, encrypted } = encryptToken(token);
-    await pool.query(
-      `INSERT INTO canvas_tokens (user_id, iv, tag, token_encrypted)
-       VALUES ($1, $2, $3, $4)
-       ON CONFLICT (user_id) DO UPDATE SET iv = EXCLUDED.iv, tag = EXCLUDED.tag, token_encrypted = EXCLUDED.token_encrypted, updated_at = NOW()`,
-      [req.userId, iv, tag, encrypted]
-    );
+    const { error } = await supabase
+      .from("canvas_tokens")
+      .upsert({
+        user_id: req.userId,
+        iv,
+        tag,
+        token_encrypted: encrypted,
+        updated_at: new Date().toISOString(),
+      });
+    if (error) throw error;
     res.json({ success: true });
   } catch (error) {
     console.error("Canvas token save error", error);
@@ -204,7 +196,7 @@ app.post("/api/canvas/token", authMiddleware, async (req, res) => {
 
 app.delete("/api/canvas/token", authMiddleware, async (req, res) => {
   try {
-    await pool.query("DELETE FROM canvas_tokens WHERE user_id = $1", [req.userId]);
+    await supabase.from("canvas_tokens").delete().eq("user_id", req.userId);
     res.json({ success: true });
   } catch (error) {
     console.error("Canvas token delete error", error);
@@ -212,60 +204,14 @@ app.delete("/api/canvas/token", authMiddleware, async (req, res) => {
   }
 });
 
-// Proxy Canvas requests with per-user token
-app.use("/api/canvas", authMiddleware, async (req, res) => {
-  try {
-    const { rows } = await pool.query(
-      "SELECT iv, tag, token_encrypted FROM canvas_tokens WHERE user_id = $1",
-      [req.userId]
-    );
-    if (rows.length === 0) {
-      return res.status(401).json({ error: "Canvas token not set" });
-    }
-    const { iv, tag, token_encrypted } = rows[0];
-    const token = decryptToken(iv, tag, token_encrypted);
-
-    const targetPath = req.originalUrl.replace("/api/canvas", "");
-    const targetUrl = `${canvasApiBase}${targetPath}`;
-
-    const method = req.method;
-    const headers = {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    };
-
-    const body =
-      method === "GET" || method === "HEAD" ? undefined : JSON.stringify(req.body);
-
-    const canvasResp = await fetch(targetUrl, {
-      method,
-      headers,
-      body,
-    });
-
-    const text = await canvasResp.text();
-    res.status(canvasResp.status);
-    // Forward minimal headers
-    res.set("Content-Type", canvasResp.headers.get("content-type") || "application/json");
-    return res.send(text);
-  } catch (error) {
-    console.error("Canvas proxy error", error);
-    return res.status(500).json({ error: "Canvas proxy failed" });
-  }
-});
-
-// --- Spaced Repetition: update card schedule ---
+// --- Spaced Repetition ---
 const qualityToSM2 = (quality) => {
   switch (quality) {
-    case "easy":
-      return 5;
-    case "good":
-      return 4;
-    case "hard":
-      return 3;
+    case "easy": return 5;
+    case "good": return 4;
+    case "hard": return 3;
     case "again":
-    default:
-      return 1;
+    default: return 1;
   }
 };
 
@@ -283,7 +229,6 @@ const updateSchedule = (card, qualityStr) => {
     interval = interval * ease;
   }
 
-  // SM-2 ease update
   ease = ease + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
   if (ease < 1.3) ease = 1.3;
 
@@ -294,29 +239,37 @@ const updateSchedule = (card, qualityStr) => {
 app.post("/api/cards/:id/review", authMiddleware, async (req, res) => {
   const { quality } = req.body;
   if (!quality) return res.status(400).json({ error: "quality is required" });
+
   try {
-    // Verify card ownership via deck
-    const { rows } = await pool.query(
-      `SELECT c.ease, c.interval_days, c.lapses
-       FROM cards c
-       JOIN decks d ON c.deck_id = d.id
-       WHERE c.id = $1 AND d.user_id = $2`,
-      [req.params.id, req.userId]
-    );
-    if (rows.length === 0) return res.status(404).json({ error: "Card not found" });
+    // Get card with deck ownership check
+    const { data: card, error: cardError } = await supabase
+      .from("cards")
+      .select("id, ease, interval_days, lapses, deck_id, decks!inner(user_id)")
+      .eq("id", req.params.id)
+      .eq("decks.user_id", req.userId)
+      .single();
 
-    const current = rows[0];
-    const updated = updateSchedule(current, quality);
+    if (cardError || !card) {
+      return res.status(404).json({ error: "Card not found" });
+    }
 
-    const { rows: updatedRows } = await pool.query(
-      `UPDATE cards
-       SET ease = $1, interval_days = $2, lapses = $3, due_at = $4, updated_at = NOW()
-       WHERE id = $5
-       RETURNING *`,
-      [updated.ease, updated.interval_days, updated.lapses, updated.due_at, req.params.id]
-    );
+    const updated = updateSchedule(card, quality);
 
-    res.json({ data: updatedRows[0] });
+    const { data: updatedCard, error: updateError } = await supabase
+      .from("cards")
+      .update({
+        ease: updated.ease,
+        interval_days: updated.interval_days,
+        lapses: updated.lapses,
+        due_at: updated.due_at,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", req.params.id)
+      .select()
+      .single();
+
+    if (updateError) throw updateError;
+    res.json({ data: updatedCard });
   } catch (error) {
     console.error("Card review update error", error);
     res.status(500).json({ error: "Internal server error" });
@@ -326,11 +279,14 @@ app.post("/api/cards/:id/review", authMiddleware, async (req, res) => {
 // --- Decks ---
 app.get("/api/decks", authMiddleware, async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      "SELECT * FROM decks WHERE user_id = $1 ORDER BY created_at DESC",
-      [req.userId]
-    );
-    res.json({ data: rows });
+    const { data, error } = await supabase
+      .from("decks")
+      .select("*")
+      .eq("user_id", req.userId)
+      .order("created_at", { ascending: false });
+
+    if (error) throw error;
+    res.json({ data: data || [] });
   } catch (error) {
     console.error("Get decks error", error);
     res.status(500).json({ error: "Internal server error" });
@@ -339,12 +295,16 @@ app.get("/api/decks", authMiddleware, async (req, res) => {
 
 app.get("/api/decks/:id", authMiddleware, async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      "SELECT * FROM decks WHERE id = $1 AND user_id = $2",
-      [req.params.id, req.userId]
-    );
-    const deck = rows[0];
-    if (!deck) return res.status(404).json({ error: "Deck not found" });
+    const { data: deck, error } = await supabase
+      .from("decks")
+      .select("*")
+      .eq("id", req.params.id)
+      .eq("user_id", req.userId)
+      .single();
+
+    if (error || !deck) {
+      return res.status(404).json({ error: "Deck not found" });
+    }
     res.json({ data: deck });
   } catch (error) {
     console.error("Get deck error", error);
@@ -355,14 +315,21 @@ app.get("/api/decks/:id", authMiddleware, async (req, res) => {
 app.post("/api/decks", authMiddleware, async (req, res) => {
   const { title, tags, source } = req.body;
   if (!title) return res.status(400).json({ error: "Title required" });
+
   try {
-    const { rows } = await pool.query(
-      `INSERT INTO decks (user_id, title, tags, source)
-       VALUES ($1, $2, $3, $4)
-       RETURNING *`,
-      [req.userId, title, tags || [], source || null]
-    );
-    res.status(201).json({ data: rows[0] });
+    const { data, error } = await supabase
+      .from("decks")
+      .insert({
+        user_id: req.userId,
+        title,
+        tags: tags || [],
+        source: source || null,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.status(201).json({ data });
   } catch (error) {
     console.error("Create deck error", error);
     res.status(500).json({ error: "Internal server error" });
@@ -372,15 +339,16 @@ app.post("/api/decks", authMiddleware, async (req, res) => {
 // --- Cards ---
 app.get("/api/cards", authMiddleware, async (req, res) => {
   try {
-    // Only return cards from decks owned by the authenticated user
-    const { rows } = await pool.query(
-      `SELECT c.* FROM cards c
-       JOIN decks d ON c.deck_id = d.id
-       WHERE d.user_id = $1
-       ORDER BY c.created_at ASC`,
-      [req.userId]
-    );
-    res.json({ data: rows });
+    const { data, error } = await supabase
+      .from("cards")
+      .select("*, decks!inner(user_id)")
+      .eq("decks.user_id", req.userId)
+      .order("created_at", { ascending: true });
+
+    if (error) throw error;
+    // Remove the joined deck data from response
+    const cards = (data || []).map(({ decks, ...card }) => card);
+    res.json({ data: cards });
   } catch (error) {
     console.error("Get cards error", error);
     res.status(500).json({ error: "Internal server error" });
@@ -389,19 +357,26 @@ app.get("/api/cards", authMiddleware, async (req, res) => {
 
 app.get("/api/decks/:deckId/cards", authMiddleware, async (req, res) => {
   try {
-    // Verify deck ownership before returning cards
-    const { rows: deckRows } = await pool.query(
-      "SELECT id FROM decks WHERE id = $1 AND user_id = $2",
-      [req.params.deckId, req.userId]
-    );
-    if (deckRows.length === 0) {
+    // Verify deck ownership
+    const { data: deck, error: deckError } = await supabase
+      .from("decks")
+      .select("id")
+      .eq("id", req.params.deckId)
+      .eq("user_id", req.userId)
+      .single();
+
+    if (deckError || !deck) {
       return res.status(404).json({ error: "Deck not found" });
     }
-    const { rows } = await pool.query(
-      "SELECT * FROM cards WHERE deck_id = $1 ORDER BY created_at ASC",
-      [req.params.deckId]
-    );
-    res.json({ data: rows });
+
+    const { data, error } = await supabase
+      .from("cards")
+      .select("*")
+      .eq("deck_id", req.params.deckId)
+      .order("created_at", { ascending: true });
+
+    if (error) throw error;
+    res.json({ data: data || [] });
   } catch (error) {
     console.error("Get deck cards error", error);
     res.status(500).json({ error: "Internal server error" });
@@ -413,30 +388,36 @@ app.post("/api/cards", authMiddleware, async (req, res) => {
   if (!deck_id || !front || !back) {
     return res.status(400).json({ error: "deck_id, front, back are required" });
   }
+
   try {
-    // Verify deck ownership before creating card
-    const { rows: deckRows } = await pool.query(
-      "SELECT id FROM decks WHERE id = $1 AND user_id = $2",
-      [deck_id, req.userId]
-    );
-    if (deckRows.length === 0) {
+    // Verify deck ownership
+    const { data: deck, error: deckError } = await supabase
+      .from("decks")
+      .select("id")
+      .eq("id", deck_id)
+      .eq("user_id", req.userId)
+      .single();
+
+    if (deckError || !deck) {
       return res.status(404).json({ error: "Deck not found" });
     }
-    const { rows } = await pool.query(
-      `INSERT INTO cards (deck_id, front, back, hints, answers, tags, media_refs)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [
+
+    const { data, error } = await supabase
+      .from("cards")
+      .insert({
         deck_id,
         front,
         back,
-        hints || [],
-        answers || [],
-        tags || [],
-        media_refs || null,
-      ]
-    );
-    res.status(201).json({ data: rows[0] });
+        hints: hints || [],
+        answers: answers || [],
+        tags: tags || [],
+        media_refs: media_refs || null,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.status(201).json({ data });
   } catch (error) {
     console.error("Create card error", error);
     res.status(500).json({ error: "Internal server error" });
@@ -448,81 +429,84 @@ app.post("/api/cards/bulk", authMiddleware, async (req, res) => {
   if (!Array.isArray(cards) || cards.length === 0) {
     return res.status(400).json({ error: "cards array is required" });
   }
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
 
-    // Get unique deck_ids from cards and verify ownership
-    const deckIds = [...new Set(cards.map(c => c.deck_id).filter(Boolean))];
-    if (deckIds.length > 0) {
-      const { rows: ownedDecks } = await client.query(
-        "SELECT id FROM decks WHERE id = ANY($1::uuid[]) AND user_id = $2",
-        [deckIds, req.userId]
-      );
-      const ownedDeckIds = new Set(ownedDecks.map(d => d.id));
-      for (const deckId of deckIds) {
-        if (!ownedDeckIds.has(deckId)) {
-          await client.query("ROLLBACK");
-          return res.status(404).json({ error: "Deck not found or not owned by user" });
-        }
+  try {
+    // Get unique deck_ids and verify ownership
+    const deckIds = [...new Set(cards.map((c) => c.deck_id).filter(Boolean))];
+
+    const { data: ownedDecks, error: deckError } = await supabase
+      .from("decks")
+      .select("id")
+      .in("id", deckIds)
+      .eq("user_id", req.userId);
+
+    if (deckError) throw deckError;
+
+    const ownedDeckIds = new Set((ownedDecks || []).map((d) => d.id));
+    for (const deckId of deckIds) {
+      if (!ownedDeckIds.has(deckId)) {
+        return res.status(404).json({ error: "Deck not found or not owned by user" });
       }
     }
 
-    const inserted = [];
-    for (const card of cards) {
-      const { deck_id, front, back, hints, answers, tags, media_refs } = card;
-      const { rows } = await client.query(
-        `INSERT INTO cards (deck_id, front, back, hints, answers, tags, media_refs)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING *`,
-        [
-          deck_id,
-          front,
-          back,
-          hints || [],
-          answers || [],
-          tags || [],
-          media_refs || null,
-        ]
-      );
-      inserted.push(rows[0]);
-    }
-    await client.query("COMMIT");
-    res.status(201).json({ data: inserted });
+    // Insert all cards
+    const cardsToInsert = cards.map((card) => ({
+      deck_id: card.deck_id,
+      front: card.front,
+      back: card.back,
+      hints: card.hints || [],
+      answers: card.answers || [],
+      tags: card.tags || [],
+      media_refs: card.media_refs || null,
+    }));
+
+    const { data, error } = await supabase
+      .from("cards")
+      .insert(cardsToInsert)
+      .select();
+
+    if (error) throw error;
+    res.status(201).json({ data: data || [] });
   } catch (error) {
-    await client.query("ROLLBACK");
     console.error("Bulk card insert error", error);
     res.status(500).json({ error: "Internal server error" });
-  } finally {
-    client.release();
   }
 });
 
 // --- Sessions ---
 app.get("/api/sessions", authMiddleware, async (req, res) => {
   const includeEvents = req.query.includeEvents === "1";
+
   try {
-    const { rows: sessions } = await pool.query(
-      "SELECT * FROM sessions WHERE user_id = $1 ORDER BY started_at DESC",
-      [req.userId]
-    );
+    const { data: sessions, error } = await supabase
+      .from("sessions")
+      .select("*")
+      .eq("user_id", req.userId)
+      .order("started_at", { ascending: false });
+
+    if (error) throw error;
 
     if (!includeEvents) {
-      return res.json({ data: sessions });
+      return res.json({ data: sessions || [] });
     }
 
-    const { rows: events } = await pool.query(
-      "SELECT * FROM session_events WHERE session_id = ANY($1::uuid[]) ORDER BY created_at ASC",
-      [sessions.map((s) => s.id)]
-    );
+    // Get events for all sessions
+    const sessionIds = (sessions || []).map((s) => s.id);
+    const { data: events, error: eventsError } = await supabase
+      .from("session_events")
+      .select("*")
+      .in("session_id", sessionIds)
+      .order("created_at", { ascending: true });
 
-    const eventsBySession = events.reduce((acc, ev) => {
+    if (eventsError) throw eventsError;
+
+    const eventsBySession = (events || []).reduce((acc, ev) => {
       acc[ev.session_id] = acc[ev.session_id] || [];
       acc[ev.session_id].push(ev);
       return acc;
     }, {});
 
-    const withEvents = sessions.map((s) => ({
+    const withEvents = (sessions || []).map((s) => ({
       ...s,
       session_events: eventsBySession[s.id] || [],
     }));
@@ -536,14 +520,20 @@ app.get("/api/sessions", authMiddleware, async (req, res) => {
 
 app.post("/api/sessions", authMiddleware, async (req, res) => {
   const { deck_id, score } = req.body;
+
   try {
-    const { rows } = await pool.query(
-      `INSERT INTO sessions (user_id, deck_id, score)
-       VALUES ($1, $2, $3)
-       RETURNING *`,
-      [req.userId, deck_id || null, score || null]
-    );
-    res.status(201).json({ data: rows[0] });
+    const { data, error } = await supabase
+      .from("sessions")
+      .insert({
+        user_id: req.userId,
+        deck_id: deck_id || null,
+        score: score || null,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.status(201).json({ data });
   } catch (error) {
     console.error("Create session error", error);
     res.status(500).json({ error: "Internal server error" });
@@ -552,14 +542,22 @@ app.post("/api/sessions", authMiddleware, async (req, res) => {
 
 app.patch("/api/sessions/:id/finish", authMiddleware, async (req, res) => {
   const { score } = req.body;
+
   try {
-    const { rowCount } = await pool.query(
-      `UPDATE sessions
-       SET finished_at = NOW(), score = $1
-       WHERE id = $2 AND user_id = $3`,
-      [score ?? null, req.params.id, req.userId]
-    );
-    if (rowCount === 0) return res.status(404).json({ error: "Session not found" });
+    const { data, error } = await supabase
+      .from("sessions")
+      .update({
+        finished_at: new Date().toISOString(),
+        score: score ?? null,
+      })
+      .eq("id", req.params.id)
+      .eq("user_id", req.userId)
+      .select()
+      .single();
+
+    if (error || !data) {
+      return res.status(404).json({ error: "Session not found" });
+    }
     res.json({ success: true });
   } catch (error) {
     console.error("Finish session error", error);
@@ -573,14 +571,24 @@ app.post("/api/session-events", authMiddleware, async (req, res) => {
   if (!session_id) {
     return res.status(400).json({ error: "session_id is required" });
   }
+
   try {
-    const { rows } = await pool.query(
-      `INSERT INTO session_events (session_id, card_id, response, correct, ai_score, quality, next_due)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING *`,
-      [session_id, card_id || null, response || null, correct ?? null, ai_score ?? null, quality || null, next_due || null]
-    );
-    res.status(201).json({ data: rows[0] });
+    const { data, error } = await supabase
+      .from("session_events")
+      .insert({
+        session_id,
+        card_id: card_id || null,
+        response: response || null,
+        correct: correct ?? null,
+        ai_score: ai_score ?? null,
+        quality: quality || null,
+        next_due: next_due || null,
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.status(201).json({ data });
   } catch (error) {
     console.error("Create session event error", error);
     res.status(500).json({ error: "Internal server error" });
@@ -589,11 +597,14 @@ app.post("/api/session-events", authMiddleware, async (req, res) => {
 
 app.get("/api/sessions/:id/events", authMiddleware, async (req, res) => {
   try {
-    const { rows } = await pool.query(
-      "SELECT * FROM session_events WHERE session_id = $1 ORDER BY created_at ASC",
-      [req.params.id]
-    );
-    res.json({ data: rows });
+    const { data, error } = await supabase
+      .from("session_events")
+      .select("*")
+      .eq("session_id", req.params.id)
+      .order("created_at", { ascending: true });
+
+    if (error) throw error;
+    res.json({ data: data || [] });
   } catch (error) {
     console.error("Get session events error", error);
     res.status(500).json({ error: "Internal server error" });
@@ -603,10 +614,9 @@ app.get("/api/sessions/:id/events", authMiddleware, async (req, res) => {
 // --- AI / DeepSeek Proxy ---
 const deepseekEndpoint = process.env.DEEPSEEK_ENDPOINT;
 const deepseekApiKey = process.env.DEEPSEEK_API_KEY;
-const deepseekDeployment = process.env.DEEPSEEK_DEPLOYMENT || "DeepSeek-V3.2";
+const deepseekDeployment = process.env.DEEPSEEK_DEPLOYMENT || "DeepSeek-V3";
 
 app.post("/api/ai/chat", authMiddleware, async (req, res) => {
-  // Check if DeepSeek is configured
   if (!deepseekEndpoint || !deepseekApiKey) {
     return res.status(503).json({ error: "AI service not configured" });
   }
@@ -617,7 +627,6 @@ app.post("/api/ai/chat", authMiddleware, async (req, res) => {
   }
 
   try {
-    // Azure OpenAI compatible endpoint
     const apiUrl = `${deepseekEndpoint.replace(/\/$/, "")}/chat/completions`;
 
     const response = await fetch(apiUrl, {
@@ -648,14 +657,13 @@ app.post("/api/ai/chat", authMiddleware, async (req, res) => {
   }
 });
 
-// Check if AI is available (no auth required for feature detection)
 app.get("/api/ai/status", (_req, res) => {
   res.json({
     available: !!(deepseekEndpoint && deepseekApiKey),
   });
 });
 
-// Only listen when running as a standalone server (Railway, local); on Vercel the app is exported and run as serverless
+// Only listen when running as standalone server
 if (!process.env.VERCEL) {
   app.listen(port, () => {
     console.log(`Local API server running on http://localhost:${port}`);
@@ -663,4 +671,3 @@ if (!process.env.VERCEL) {
 }
 
 export default app;
-
