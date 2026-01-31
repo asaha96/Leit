@@ -1,11 +1,12 @@
 {
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/index.js" },
+    { "src": "/(.*)", "dest": "/index.html" }
+  ],
   "functions": {
     "api/index.js": {
+      "runtime": "nodejs20.x",
       "maxDuration": 30
     }
-  },
-  "rewrites": [
-    { "source": "/api/:path*", "destination": "/api" },
-    { "source": "/((?!api|assets|logo|favicon|_next|.*\\.(?:ico|png|svg|txt)).*)", "destination": "/index.html" }
-  ]
+  }
 }

@@ -1,11 +1,12 @@
-// API origin: use VITE_API_ORIGIN in production, relative /api in dev (Vite proxy)
+// API base: use VITE_API_ORIGIN if set, otherwise relative /api (same origin)
+// On Vercel, leave VITE_API_ORIGIN empty so fetch hits /api on same domain (no CORS needed)
 const getApiBase = () => {
   const origin = import.meta.env.VITE_API_ORIGIN;
   if (origin) {
-    // Remove trailing slash if present
+    // External API origin specified - append /api
     return origin.replace(/\/$/, "") + "/api";
   }
-  // In dev, Vite proxy handles /api
+  // Same origin - relative path works for both Vite dev proxy and Vercel
   return "/api";
 };
 
