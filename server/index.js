@@ -3,6 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import path from "path";
 import crypto from "crypto";
+import multer from "multer";
 import dayjs from "dayjs";
 import { createClient } from "@supabase/supabase-js";
 import { createClerkClient, clerkMiddleware, getAuth } from "@clerk/express";
@@ -661,6 +662,157 @@ app.get("/api/ai/status", (_req, res) => {
   res.json({
     available: !!(deepseekEndpoint && deepseekApiKey),
   });
+});
+
+// --- AI Flashcard Generation ---
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+});
+
+// Extract text from PDF
+app.post("/api/generate/extract-pdf", authMiddleware, upload.single("file"), async (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: "No file uploaded" });
+  }
+
+  if (req.file.mimetype !== "application/pdf") {
+    return res.status(400).json({ error: "File must be a PDF" });
+  }
+
+  try {
+    // Dynamic import of pdf-parse (ESM compatible)
+    const pdfParse = (await import("pdf-parse")).default;
+    const data = await pdfParse(req.file.buffer);
+
+    res.json({
+      text: data.text,
+      pageCount: data.numpages,
+      charCount: data.text.length,
+    });
+  } catch (error) {
+    console.error("PDF extraction error:", error);
+    res.status(500).json({ error: "Failed to extract text from PDF" });
+  }
+});
+
+// Generate flashcards from content
+const FLASHCARD_SYSTEM_PROMPT = `You are an expert flashcard creator. Generate high-quality flashcards from the provided content.
+
+RULES:
+1. Each question tests ONE specific concept
+2. Answers must be factually correct - verify before including
+3. Include 1-2 helpful hints per card
+4. Provide alternative acceptable answers
+5. Auto-generate relevant tags
+6. Adjust complexity based on difficulty level: easy (basic facts), medium (conceptual understanding), hard (application and analysis)
+
+OUTPUT (JSON only, no other text):
+{
+  "cards": [
+    {
+      "front": "Question text",
+      "back": "Verified correct answer",
+      "hints": ["Hint 1", "Hint 2"],
+      "answers": ["Primary answer", "Alt answer"],
+      "tags": ["topic1", "topic2"]
+    }
+  ],
+  "suggestedDeckName": "Topic Name",
+  "contentSummary": "Brief description of content"
+}`;
+
+app.post("/api/generate/flashcards", authMiddleware, async (req, res) => {
+  if (!deepseekEndpoint || !deepseekApiKey) {
+    return res.status(503).json({ error: "AI service not configured" });
+  }
+
+  const { content, cardCount = 10, difficulty = "medium" } = req.body;
+
+  if (!content || typeof content !== "string") {
+    return res.status(400).json({ error: "content is required" });
+  }
+
+  if (content.length > 50000) {
+    return res.status(400).json({ error: "Content exceeds 50,000 character limit" });
+  }
+
+  try {
+    const apiUrl = `${deepseekEndpoint.replace(/\/$/, "")}/chat/completions`;
+
+    const userPrompt = `Generate ${cardCount} flashcards at ${difficulty} difficulty level from the following content:
+
+---
+${content}
+---
+
+Remember: Output ONLY valid JSON, no markdown, no extra text.`;
+
+    const response = await fetch(apiUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "api-key": deepseekApiKey,
+      },
+      body: JSON.stringify({
+        model: deepseekDeployment,
+        messages: [
+          { role: "system", content: FLASHCARD_SYSTEM_PROMPT },
+          { role: "user", content: userPrompt },
+        ],
+        max_tokens: 4000,
+        temperature: 0.7,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error("DeepSeek API error:", response.status, errorText);
+      return res.status(response.status).json({ error: "AI service error", details: errorText });
+    }
+
+    const data = await response.json();
+    const aiContent = data.choices?.[0]?.message?.content;
+
+    if (!aiContent) {
+      return res.status(500).json({ error: "No response from AI" });
+    }
+
+    // Parse the JSON response from AI
+    let parsed;
+    try {
+      // Try to extract JSON if there's any markdown wrapper
+      const jsonMatch = aiContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        parsed = JSON.parse(jsonMatch[0]);
+      } else {
+        parsed = JSON.parse(aiContent);
+      }
+    } catch (parseError) {
+      console.error("Failed to parse AI response:", aiContent);
+      return res.status(500).json({ error: "Failed to parse AI response", raw: aiContent });
+    }
+
+    // Validate and add IDs to cards
+    const cards = (parsed.cards || []).map((card, index) => ({
+      id: `gen-${Date.now()}-${index}`,
+      front: card.front || "",
+      back: card.back || "",
+      hints: Array.isArray(card.hints) ? card.hints : [],
+      answers: Array.isArray(card.answers) ? card.answers : [card.back || ""],
+      tags: Array.isArray(card.tags) ? card.tags : [],
+      selected: true,
+    }));
+
+    res.json({
+      cards,
+      suggestedDeckName: parsed.suggestedDeckName || "Generated Flashcards",
+      contentSummary: parsed.contentSummary || "",
+    });
+  } catch (error) {
+    console.error("Flashcard generation error:", error);
+    res.status(500).json({ error: "Failed to generate flashcards" });
+  }
 });
 
 // Only listen when running as standalone server

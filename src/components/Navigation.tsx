@@ -1,7 +1,7 @@
 import { Button } from '@/components/ui/button';
 import { UserButton } from '@clerk/clerk-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
-import { BookOpen, BarChart3, GraduationCap } from 'lucide-react';
+import { BookOpen, BarChart3, GraduationCap, Sparkles } from 'lucide-react';
 import logo from '/logo.png';
 
 interface NavigationProps {
@@ -12,6 +12,7 @@ interface NavigationProps {
 export const Navigation = ({ activeTab, onTabChange }: NavigationProps) => {
   const navItems = [
     { id: 'study', label: 'Study', icon: BookOpen },
+    { id: 'generate', label: 'Generate', icon: Sparkles },
     { id: 'dashboard', label: 'Dashboard', icon: BarChart3 },
     { id: 'practice', label: 'Practice', icon: GraduationCap },
   ];

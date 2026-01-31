@@ -3,6 +3,7 @@ import { useAuth } from '@/hooks/useAuth';
 import { AuthPage } from '@/pages/Auth';
 import { Dashboard } from '@/pages/Dashboard';
 import { Practice } from '@/pages/Practice';
+import { Generate } from '@/pages/Generate';
 import { Navigation } from '@/components/Navigation';
 import { DatabaseService } from '@/services/database';
 import { SessionManager } from '@/services/sessionManager';
@@ -250,6 +251,8 @@ const Index = () => {
             )}
           </div>
         );
+      case 'generate':
+        return <Generate onDeckCreated={() => setActiveTab('study')} />;
       case 'dashboard':
         return <Dashboard />;
       case 'practice':
