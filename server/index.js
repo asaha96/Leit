@@ -140,8 +140,13 @@ const authMiddleware = async (req, res, next) => {
   }
 };
 
+// Health check endpoints (both paths for compatibility)
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
+});
+
+app.get("/api/health", (_req, res) => {
+  res.json({ status: "ok", timestamp: new Date().toISOString() });
 });
 
 // --- Auth ---
