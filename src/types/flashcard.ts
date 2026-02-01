@@ -22,6 +22,12 @@ export interface SessionEntry {
   quality: 'again' | 'hard' | 'good' | 'easy';
   timestamp: number;
   nextDue: string; // ISO date string
+  // Metadata for difficulty inference
+  responseTimeMs?: number;
+  hintUsed?: boolean;
+  inferredQuality?: 'again' | 'hard' | 'good' | 'easy';
+  inferenceConfidence?: number;
+  userOverrode?: boolean;
 }
 
 export interface SessionStats {
@@ -31,8 +37,20 @@ export interface SessionStats {
   averageScore: number;
 }
 
+export type MatchType = 'exact' | 'synonym' | 'word_order' | 'fuzzy' | 'ai' | 'none';
+
 export interface EvaluationResult {
   score: number; // 0-1
   feedback: string;
   isCorrect: boolean;
+  matchType?: MatchType;
+  aiUsed?: boolean;
+}
+
+export interface AnswerMetadata {
+  responseTimeMs: number;
+  hintUsed: boolean;
+  inferredQuality: 'again' | 'hard' | 'good' | 'easy';
+  inferenceConfidence: number;
+  userOverrode: boolean;
 }

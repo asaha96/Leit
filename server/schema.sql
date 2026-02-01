@@ -68,5 +68,11 @@ CREATE TABLE IF NOT EXISTS session_events (
   ai_score NUMERIC,
   quality TEXT,
   next_due TIMESTAMPTZ,
+  -- New fields for difficulty inference
+  response_time_ms INTEGER,           -- Time from card shown to answer reveal
+  hint_used BOOLEAN DEFAULT FALSE,    -- Whether user clicked "Show Hint"
+  inferred_quality TEXT,              -- AI/algorithm inferred quality
+  inference_confidence NUMERIC,       -- Confidence of the inference (0-1)
+  user_overrode BOOLEAN DEFAULT FALSE, -- Whether user selected different quality than inferred
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

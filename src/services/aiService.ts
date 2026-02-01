@@ -149,4 +149,56 @@ Keep the question clear and focused. Respond in JSON format: {"question": "...",
 
     return this.chat(messages, 150);
   }
+
+  /**
+   * Evaluate if two answers are semantically equivalent
+   * Used as a fallback when built-in matching is uncertain
+   */
+  static async evaluateSemanticMatch(
+    userAnswer: string,
+    expectedAnswers: string[],
+    cardContext?: string
+  ): Promise<{ isMatch: boolean; isPartial: boolean; reason: string } | null> {
+    const expectedList = expectedAnswers.join('" or "');
+    const contextInfo = cardContext ? `\nQuestion context: ${cardContext}` : '';
+
+    const messages: ChatMessage[] = [
+      {
+        role: 'system',
+        content: `You are an answer evaluator for flashcards. Determine if the user's answer is semantically equivalent to the expected answer(s). Consider synonyms, paraphrases, and different wordings that convey the same meaning.
+
+Reply in JSON format: {"result": "YES" | "PARTIAL" | "NO", "reason": "brief explanation"}
+- YES: Answers are semantically equivalent (allow for synonyms, abbreviations, slight wording differences)
+- PARTIAL: Answer is partially correct or contains the right idea but is incomplete
+- NO: Answer is incorrect or conveys a different meaning`,
+      },
+      {
+        role: 'user',
+        content: `Expected answer: "${expectedList}"
+User's answer: "${userAnswer}"${contextInfo}
+
+Are these answers semantically equivalent?`,
+      },
+    ];
+
+    const response = await this.chat(messages, 150);
+    if (!response) return null;
+
+    try {
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsed = JSON.parse(jsonMatch[0]);
+        const result = parsed.result?.toUpperCase();
+        return {
+          isMatch: result === 'YES',
+          isPartial: result === 'PARTIAL',
+          reason: parsed.reason || ''
+        };
+      }
+    } catch {
+      // JSON parsing failed
+    }
+
+    return null;
+  }
 }

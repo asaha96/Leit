@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Card, SessionEntry, SessionStats } from '@/types/flashcard';
+import { Card, SessionEntry, SessionStats, AnswerMetadata } from '@/types/flashcard';
 import { FlashcardView } from './FlashcardView';
 import { SessionProgress } from './SessionProgress';
 import { SessionComplete } from './SessionComplete';
@@ -12,9 +12,10 @@ interface FlashcardSessionProps {
   cards: Card[];
   onSessionComplete: (stats: SessionStats, sessions: SessionEntry[]) => void;
   onExit?: () => void;
+  useAIEvaluation?: boolean;
 }
 
-export function FlashcardSession({ cards, onSessionComplete, onExit }: FlashcardSessionProps) {
+export function FlashcardSession({ cards, onSessionComplete, onExit, useAIEvaluation = false }: FlashcardSessionProps) {
   const [currentCardIndex, setCurrentCardIndex] = useState(0);
   const [sessionEntries, setSessionEntries] = useState<SessionEntry[]>([]);
   const [isComplete, setIsComplete] = useState(false);
@@ -29,7 +30,7 @@ export function FlashcardSession({ cards, onSessionComplete, onExit }: Flashcard
   const currentCard = cards[currentCardIndex];
   const isLastCard = currentCardIndex === cards.length - 1;
 
-  const handleAnswer = useCallback(async (response: string, quality: Quality) => {
+  const handleAnswer = useCallback(async (response: string, quality: Quality, metadata?: AnswerMetadata) => {
     if (!currentCard || isPaused) return;
 
     // Evaluate the answer
@@ -47,7 +48,7 @@ export function FlashcardSession({ cards, onSessionComplete, onExit }: Flashcard
       nextDue = new Date().toISOString();
     }
 
-    // Create session entry with server-derived next_due
+    // Create session entry with server-derived next_due and metadata
     const sessionEntry: SessionEntry = {
       userId: 'local-user',
       cardId: currentCard.id,
@@ -55,7 +56,13 @@ export function FlashcardSession({ cards, onSessionComplete, onExit }: Flashcard
       score: evaluation.score,
       quality,
       timestamp: Date.now(),
-      nextDue
+      nextDue,
+      // Include metadata from FlashcardView
+      responseTimeMs: metadata?.responseTimeMs,
+      hintUsed: metadata?.hintUsed,
+      inferredQuality: metadata?.inferredQuality,
+      inferenceConfidence: metadata?.inferenceConfidence,
+      userOverrode: metadata?.userOverrode
     };
 
     // Update session entries
@@ -178,13 +185,14 @@ export function FlashcardSession({ cards, onSessionComplete, onExit }: Flashcard
           Session paused. Resume to continue answering.
         </div>
       )}
-      
+
       <FlashcardView
         card={currentCard}
         onAnswer={handleAnswer}
         cardNumber={currentCardIndex + 1}
         totalCards={cards.length}
         disabled={isPaused}
+        useAIEvaluation={useAIEvaluation}
       />
     </div>
   );
