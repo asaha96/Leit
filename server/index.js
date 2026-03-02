@@ -50,6 +50,7 @@ app.use(cors({
     if (!origin) return callback(null, true);
     if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) return callback(null, true);
     if (origin?.endsWith(".vercel.app")) return callback(null, true);
+    if (origin === "https://leit.aritrasaha.com") return callback(null, true);
     const allowedOrigins = (process.env.ALLOWED_ORIGINS || "").split(",").map((o) => o.trim()).filter(Boolean);
     if (allowedOrigins.includes(origin)) return callback(null, true);
     return callback(new Error("Not allowed by CORS"));
